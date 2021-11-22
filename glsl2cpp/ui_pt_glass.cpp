@@ -26,14 +26,17 @@
 #define WIN_NAME "Glass Path Tracing Window"
 #define WinW_Padding 100
 #define WinH_Padding 100
-#define WinW_Default 400
-#define WinH_Default 400
+#define WinW_Default 600
+#define WinH_Default 500
 #define WinW_Min 100
 #define WinH_Min 100
-#define WinW_Max 800
-#define WinH_Max 800
+#define WinW_Max 1920
+#define WinH_Max 1080
+// for my version of Windows
+#define WinW_Offset 16
+#define WinH_Offset 39
 
-void Init();  // called before window is created
+void Init(char**);  // called before window is created
 void render();
 void WindowResize(int _oldW, int _oldH, int _W, int _H);
 void WindowClose();
@@ -72,7 +75,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 		_HIMG = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, (void**)&_WINIMG, NULL, 0);
 		DeleteDC(hdc);
 		_RDBK }
-	case WM_GETMINMAXINFO: { LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam; lpMMI->ptMinTrackSize.x = WinW_Min, lpMMI->ptMinTrackSize.y = WinH_Min, lpMMI->ptMaxTrackSize.x = WinW_Max, lpMMI->ptMaxTrackSize.y = WinH_Max; break; }
+	case WM_GETMINMAXINFO: { LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam; lpMMI->ptMinTrackSize.x = WinW_Min + WinW_Offset, lpMMI->ptMinTrackSize.y = WinH_Min + WinH_Offset, lpMMI->ptMaxTrackSize.x = WinW_Max + WinW_Offset, lpMMI->ptMaxTrackSize.y = WinH_Max + WinH_Offset; break; }
 	case WM_PAINT: { PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps), HMem = CreateCompatibleDC(hdc); HBITMAP hbmOld = (HBITMAP)SelectObject(HMem, _HIMG); BitBlt(hdc, 0, 0, _WIN_W, _WIN_H, HMem, 0, 0, SRCCOPY); SelectObject(HMem, hbmOld); EndPaint(hWnd, &ps); DeleteDC(HMem), DeleteDC(hdc); break; }
 #define _USER_FUNC_PARAMS GET_X_LPARAM(lParam), _WIN_H - 1 - GET_Y_LPARAM(lParam)
 	case WM_MOUSEMOVE: { MouseMove(_USER_FUNC_PARAMS); _RDBK } case WM_MOUSEWHEEL: { MouseWheel(GET_WHEEL_DELTA_WPARAM(wParam)); _RDBK }
@@ -85,12 +88,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 #else
 int main(int argc, char* argv[]) {
-	Init();
+	Init(argv);
 	HINSTANCE hInstance = NULL; int nCmdShow = SW_RESTORE;
 #endif
-	WNDCLASSEX wc; wc.cbSize = sizeof(WNDCLASSEX), wc.style = 0, wc.lpfnWndProc = WndProc, wc.cbClsExtra = wc.cbWndExtra = 0, wc.hInstance = hInstance; wc.hIcon = wc.hIconSm = 0, wc.hCursor = LoadCursor(NULL, IDC_ARROW), wc.hbrBackground = CreateSolidBrush(RGB(0, 0, 0)), wc.lpszMenuName = NULL, wc.lpszClassName = _T(WIN_NAME); if (!RegisterClassEx(&wc)) return -1;
-	_HWND = CreateWindow(_T(WIN_NAME), _T(WIN_NAME), WS_OVERLAPPEDWINDOW, WinW_Padding, WinH_Padding, WinW_Default, WinH_Default, NULL, NULL, hInstance, NULL); ShowWindow(_HWND, nCmdShow); UpdateWindow(_HWND);
-	MSG message; while (GetMessage(&message, 0, 0, 0)) { TranslateMessage(&message); DispatchMessage(&message); } return (int)message.wParam;
+	WNDCLASSEX wc;
+	wc.cbSize = sizeof(WNDCLASSEX), wc.style = 0, wc.lpfnWndProc = WndProc, wc.cbClsExtra = wc.cbWndExtra = 0, wc.hInstance = hInstance;
+	wc.hIcon = wc.hIconSm = 0, wc.hCursor = LoadCursor(NULL, IDC_ARROW), wc.hbrBackground = CreateSolidBrush(RGB(0, 0, 0)), wc.lpszMenuName = NULL, wc.lpszClassName = _T(WIN_NAME);
+	if (!RegisterClassEx(&wc)) return -1;
+	_HWND = CreateWindow(_T(WIN_NAME), _T(WIN_NAME), WS_OVERLAPPEDWINDOW, WinW_Padding, WinH_Padding, WinW_Default + WinW_Offset, WinH_Default + WinH_Offset, NULL, NULL, hInstance, NULL);
+	ShowWindow(_HWND, nCmdShow); UpdateWindow(_HWND);
+	MSG message; while (GetMessage(&message, 0, 0, 0)) {
+		TranslateMessage(&message); DispatchMessage(&message);
+	} return (int)message.wParam;
 }
 
 
@@ -126,14 +135,12 @@ namespace GLSL {
 	vec3 iResolution = vec3(0.0, 0.0, 1.0);
 	vec4 iMouse = vec4(0, 0, 0, 0);
 
-	vec4 gl_FragCoord;
-
 	// texture
 	vec4 *iChannel0 = nullptr;
-	vec4 texelFetch(const vec4 channel[], ivec2 coord, int plane) {
+	vec4 texelFetch(const vec4 texture[], ivec2 coord, int plane) {
 		int x = clamp(coord.x, 0, _WIN_W - 1);
 		int y = clamp(coord.y, 0, _WIN_H - 1);
-		return channel[y*_WIN_W + x];
+		return texture[y*_WIN_W + x];
 	}
 
 	// source code
@@ -194,8 +201,8 @@ void render() {
 		int WIN_SIZE = _WIN_W * _WIN_H;
 		for (int k = beg; k < end; k += step) {
 			int j = k / _WIN_W, i = k % _WIN_W;
-			GLSL::gl_FragCoord = vec4(vec2(i, j) + 0.5f, 0.0f, 0.0f);
-			GLSL::mainImage(GLSL::FrameBuffer[k], GLSL::gl_FragCoord.xy());
+			vec4 gl_FragCoord = vec4(vec2(i, j) + 0.5f, 0.0f, 0.0f);
+			GLSL::mainImage(GLSL::FrameBuffer[k], gl_FragCoord.xy());
 		}
 		if (sig) *sig = true;
 	}, _WIN_W*_WIN_H);
@@ -241,9 +248,9 @@ void render_save() {
 	exit(0);
 }
 
-void Init() {
-	bvh_glass = loadModel("D://.ply");
-	bvh_content = loadModel("D:/Homework/AVI4M/AVI4M-ISP/models/group_01_sdf.ply");
+void Init(char* argv[]) {
+	bvh_glass = loadModel(argv[1]);
+	bvh_content = loadModel(argv[2]);
 	render_save();
 	_TimeStart = std::chrono::high_resolution_clock::now();
 }
