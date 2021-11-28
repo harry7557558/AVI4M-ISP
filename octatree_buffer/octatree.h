@@ -423,7 +423,7 @@ namespace ScalarFieldTriangulator_octatree {
 
 	// export the entire tree. see `README.md` for details
 	// return vector may not be consistent due to the use of memory address
-	std::vector<uint16_t> to_buffer() {
+	std::vector<uint16_t> to_buffer(vec3(*colorf)(vec3)) {
 		octatree_main();
 
 		// triangles + bottom layer
@@ -454,10 +454,11 @@ namespace ScalarFieldTriangulator_octatree {
 						triangles.push_back(Triangle{ a, b, c });
 					}
 				}
-				bottom_layer.push_back(n);
+				if (n.n != 0)
+					bottom_layer.push_back(n);
 			}
 		}
-		std::sort(bottom_layer.begin(), bottom_layer.end(), [](TriangleNode a, TriangleNode b) { return a.p < b.p; });
+		//std::sort(bottom_layer.begin(), bottom_layer.end(), [](TriangleNode a, TriangleNode b) { return a.p < b.p; });
 
 		// middle layers
 		struct Node {
@@ -550,49 +551,56 @@ namespace ScalarFieldTriangulator_octatree {
 					((int*)&triangles_v[i])[_] = (int)vertices.size() - 1;
 			}
 		}
+		std::vector<vec3> vert_cols;
+		for (ivec3 p : vertices) {
+			vec3 q = mix(P0, P1, vec3(p) / vec3(MESH_SIZE));
+			vert_cols.push_back(colorf(q));
+		}
 
 		// put layers together
 		std::vector<uint16_t> result;
-		int add = 2 * (int)top_layer.size();  // top layer
+		int add = 2 * (int)top_layer.size();  // top layer (grid)
 		for (int i = 0; i < (int)top_layer.size(); i++) {
 			int data = top_layer[i];
-			int p = data == -1 ? 0 : data + add;
+			int p = data == -1 ? 0 : 2 * 8 * data + add;
 			result.push_back((uint16_t)(p & 0xffff));
 			result.push_back((uint16_t)(p >> 16));
+		}
+		std::vector<int> bottom_layer_add;  // pointers to bottom layer
+		bottom_layer_add.push_back(0);
+		for (int i = 0; i < (int)bottom_layer.size(); i++) {
+			int sz = 1 + 11 * bottom_layer[i].n;
+			bottom_layer_add.push_back(bottom_layer_add.back() + sz);
 		}
 		for (int j = (int)middle_layers.size(); j--;) {  // middle layers
 			add += 2 * 8 * (int)middle_layers[j].size();
 			for (int i = 0; i < (int)middle_layers[j].size(); i++) {
 				for (int _ = 0; _ < 8; _++) {
 					int data = middle_layers[j][i].c[_];
-					int p = data == -1 ? 0 : data + add;
+					int p = data == -1 ? 0 : (j > 0 ? 2 * 8 * data : bottom_layer_add[data]) + add;
 					result.push_back((uint16_t)(p & 0xffff));
 					result.push_back((uint16_t)(p >> 16));
 				}
 			}
 		}
-		for (int i = 0; i < (int)bottom_layer.size(); i++)  // bottom layer
-			add += 1 + 2 * 3 * bottom_layer[i].n;
+		add += bottom_layer_add.back();  // bottom layer
 		for (int i = 0; i < (int)bottom_layer.size(); i++) {
 			int data = bottom_layer[i].n;
 			result.push_back((uint16_t)data);
 			for (int j = 0; j < bottom_layer[i].n; j++) {
 				int trig_i = bottom_layer[i].t[j];
+				vec3 col = vec3(0.0);
 				for (int _ = 0; _ < 3; _++) {
-					int data = ((int*)&triangles_v[trig_i])[_];
-					if (data < 0 || data >= (int)vertices.size())
-						throw "Vertex index out of range";
-					int p = data + add;
-					result.push_back((uint16_t)(p & 0xffff));
-					result.push_back((uint16_t)(p >> 16));
+					int vi = ((int*)&triangles_v[trig_i])[_];
+					result.push_back((uint16_t)(vertices[vi].x));
+					result.push_back((uint16_t)(vertices[vi].y));
+					result.push_back((uint16_t)(vertices[vi].z));
+					col += vert_cols[vi];
 				}
+				ivec3 rgb = ivec3(255.0*clamp(col / 3.0, 0.0, 1.0) + 0.5);
+				result.push_back(rgb.x + rgb.y * 256);
+				result.push_back(rgb.z);
 			}
-		}
-		add += 3 * (int)vertices.size();  // vertices
-		for (int i = 0; i < (int)vertices.size(); i++) {
-			result.push_back((uint16_t)vertices[i].x);
-			result.push_back((uint16_t)vertices[i].y);
-			result.push_back((uint16_t)vertices[i].z);
 		}
 		return result;
 	}
@@ -616,13 +624,14 @@ namespace ScalarFieldTriangulator_octatree {
 
 	// octatree to buffer
 	template<typename Fun>
-	std::vector<uint16_t> octatree_buffer(Fun fun, vec3 p0, vec3 p1, ivec3 dif, int plot_depth, int edge_rounding) {
+	std::vector<uint16_t> octatree_buffer(Fun fun, vec3 p0, vec3 p1, ivec3 dif, int plot_depth, int edge_rounding,
+		vec3(*colorf)(vec3)) {
 		__private__::fun = fun;
 		__private__::P0 = p0, __private__::P1 = p1;
 		__private__::SEARCH_DIF = dif, __private__::PLOT_DEPTH = plot_depth;
 		__private__::EDGE_ROUNDING = edge_rounding;
 		__private__::calcParams();
-		return __private__::to_buffer();
+		return __private__::to_buffer(colorf);
 	}
 
 #undef ScalarFieldTriangulator_octatree_PRIVATE_

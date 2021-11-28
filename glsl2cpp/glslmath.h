@@ -24,6 +24,7 @@ struct ivec2
 	explicit ivec2() {}
 	explicit ivec2(const int &a) : x(a), y(a) {}
 	explicit ivec2(const int &x, const int &y) : x((int)x), y((int)y) {}
+	explicit ivec2(const vec2 &p);
 	bool operator==(const ivec2 &v) const { return x == v.x && y == v.y; }
 	bool operator!=(const ivec2 &v) const { return x != v.x || y != v.y; }
 	ivec2 operator-() const { return ivec2(-x, -y); }
@@ -57,6 +58,7 @@ struct ivec3
 	explicit ivec3(const int &x, const int &y, const int &z) : x((int)x), y((int)y), z((int)z) {}
 	explicit ivec3(const ivec2 &xy, const int &z) : x((int)xy.x), y((int)xy.y), z((int)z) {}
 	explicit ivec3(const int &x, const ivec2 &yz) : x((int)x), y((int)yz.x), z((int)yz.y) {}
+	explicit ivec3(const vec3 &p);
 	bool operator==(const ivec3 &v) const { return x == v.x && y == v.y && z == v.z; }
 	bool operator!=(const ivec3 &v) const { return x != v.x || y != v.y || z != v.z; }
 	ivec3 operator-() const { return ivec3(-x, -y, -z); }
@@ -93,6 +95,7 @@ struct ivec4
 	explicit ivec4(const int &x, const int &y, const ivec2 &zw) : x((int)x), y((int)y), z((int)zw.x), w((int)zw.y) {}
 	explicit ivec4(const ivec3 &xyz, const int &w) : x((int)xyz.x), y((int)xyz.y), z((int)xyz.z), w((int)w) {}
 	explicit ivec4(const int &x, const ivec3 &yzw) : x((int)x), y((int)yzw.x), z((int)yzw.y), w((int)yzw.z) {}
+	explicit ivec4(const vec4 &p);
 	bool operator==(const ivec4 &v) const { return x == v.x && y == v.y && z == v.z && w == v.w; }
 	bool operator!=(const ivec4 &v) const { return x != v.x || y != v.y || z != v.z || w != v.w; }
 	ivec4 operator-() const { return ivec4(-x, -y, -z, -w); }
@@ -708,6 +711,10 @@ struct vec4
 #endif
 };
 
+ivec2::ivec2(const vec2 &p) : x((int)p.x), y((int)p.y) {}
+ivec3::ivec3(const vec3 &p) : x((int)p.x), y((int)p.y), z((int)p.z) {}
+ivec4::ivec4(const vec4 &p) : x((int)p.x), y((int)p.y), z((int)p.z), w((int)p.w) {}
+
 #if ENABLE_SWIZZLING
 vec3 vec2::xxx() const { return vec3(x, x, x); }
 vec3 vec2::yxx() const { return vec3(y, x, x); }
@@ -1017,6 +1024,8 @@ float mod(float x, float y) { return x - y * floorf(x / y); }
 float step(float edge, float x) { return x < edge ? 0.0f : 1.0f; }
 template <typename vec>
 vec mix(vec x, vec y, float a) { return x * (1.0f - a) + y * a; }
+template <typename vec>
+vec mix(vec x, vec y, vec a) { return x * (1.0f - a) + y * a; }
 template <typename T>
 T smoothstep(T edge0, T edge1, T x)
 {

@@ -20,11 +20,7 @@ Started with `prod(SEARCH_DIF)` pointers, the start of the top layer (grid), in 
 
 A block in a middle layer contains `8` pointers, the children in the next layer;
 
-A block in the bottom layer contains an integer `n`, the number of triangles, followed by `3*n` pointers to their vertices;
-
-A list of vertices, each contains 3 integers, the XYZ coordinates;
-
-Color?? The above subjects to change.
+A block in the bottom layer contains an integer `n`, the number of triangles, followed by `n` groups of `3×3+2=11` integers for the coordinates of the vertices and the 32-bit RGBA color;
 
 All integers are 16-bit unsigned. All pointers are 32-bit little endian. A null pointer is represented by `0x0000 0x0000`.
 
