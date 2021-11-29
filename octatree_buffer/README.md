@@ -1,4 +1,4 @@
-Use octatree to triangulate implicit surfaces. Directly build hierarchy structure that can be used for accelerating raytracing and store it in a linear `int16` buffer.
+Use octatree to triangulate implicit surfaces. Directly build hierarchy structure that can be used for accelerating raytracing and store it in a linear `uint8` buffer.
 
 ### Parameters:
 
@@ -8,21 +8,21 @@ Use octatree to triangulate implicit surfaces. Directly build hierarchy structur
 
 `int PLOT_DEPTH`: depth of the hierarchy
 
-`int EDGE_ROUNDING`: determines the precision of coordinates
+`int EDGE_ROUNDING`: between 2 and 255, determines the precision of the coordinates
 
-All vertices in the mesh have coordinates in `[0, (SEARCH_DIF<<PLOT_DEPTH)*EDGE_ROUNDING]`.
+All vertices in the geometry have absolute coordinates in `[0, (SEARCH_DIF<<PLOT_DEPTH)*EDGE_ROUNDING]` and relative coordinates in `[0, EDGE_ROUNDING]`.
 
 ### Buffer structure specification:
 
 Designed to be placed in GLSL `highp uint` array.
 
-Started with `prod(SEARCH_DIF)` pointers, the start of the top layer (grid), in flattened `[z][y][x]` order;
+Started with `prod(SEARCH_DIF)` 32-bit pointers, the start of the top layer (grid), in flattened `[z][y][x]` order;
 
-A block in a middle layer contains `8` pointers, the children in the next layer;
+A block in a middle layer contains `8` 32-bit pointers, the children in the next layer;
 
-A block in the bottom layer contains an integer `n`, the number of triangles, followed by `n` groups of `3×3+2=11` integers for the coordinates of the vertices and the 32-bit RGBA color;
+A block in the bottom layer contains a 8-bit integer `n`, the number of triangles, followed by `n` triangles. Each triangle contains `3×3=9` 8-bit integers, the coordinates of the vertices, followed by `3` 8-bit integers, the RGB color.
 
-All integers are 16-bit unsigned. All pointers are 32-bit little endian. A null pointer is represented by `0x0000 0x0000`.
+All integers and pointers are little endian. A null pointer is represented by `0x00000000`.
 
 ```glsl
 const ivec3 VERTEX_LIST[8] = {

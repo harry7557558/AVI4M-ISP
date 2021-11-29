@@ -145,8 +145,10 @@ namespace ScalarFieldTriangulator_octatree {
 		PLOT_SIZE = 1 << PLOT_DEPTH;
 		GRID_SIZE = SEARCH_DIF * PLOT_SIZE;
 		MESH_SIZE = GRID_SIZE * EDGE_ROUNDING;
-		if (max(max(MESH_SIZE.x, MESH_SIZE.y), MESH_SIZE.z) >= 0x10000)
-			throw "Grid size beyond 16 bit integer limit.";
+		if (EDGE_ROUNDING >= 0x100)
+			throw "Edge rounding beyond 8 bit integer limit.";
+		/*if (max(max(MESH_SIZE.x, MESH_SIZE.y), MESH_SIZE.z) >= 0x10000)
+			throw "Grid size beyond 16 bit integer limit.";*/
 	}
 
 	// position ID to position
@@ -423,7 +425,7 @@ namespace ScalarFieldTriangulator_octatree {
 
 	// export the entire tree. see `README.md` for details
 	// return vector may not be consistent due to the use of memory address
-	std::vector<uint16_t> to_buffer(vec3(*colorf)(vec3)) {
+	std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3)) {
 		octatree_main();
 
 		// triangles + bottom layer
@@ -432,6 +434,7 @@ namespace ScalarFieldTriangulator_octatree {
 		};
 		struct TriangleNode {
 			octatree_node* p;  // cell ID
+			ivec3 po;  // origin of coordinates of triangles
 			int n = 0;  // number of triangles
 			int t[5] = { -1, -1, -1, -1, -1 };
 		};
@@ -444,6 +447,7 @@ namespace ScalarFieldTriangulator_octatree {
 			if (v_table[0] != -1) {
 				TriangleNode n;
 				n.p = cells[i];
+				n.po = cells[i]->_p;
 				for (int u = 0; ; u += 3) {
 					if (v_table[u] == -1) break;
 					ivec3 a = getInterpolation(p, cells[i]->v, v_table[u]);
@@ -558,48 +562,58 @@ namespace ScalarFieldTriangulator_octatree {
 		}
 
 		// put layers together
-		std::vector<uint16_t> result;
-		int add = 2 * (int)top_layer.size();  // top layer (grid)
+		std::vector<uint8_t> result;
+		auto pushUint16 = [](std::vector<uint8_t> &buf, uint16_t val) {
+			buf.push_back((uint8_t)(val & 0xff));
+			buf.push_back((uint8_t)(val >> 8));
+		};
+		auto pushUint32 = [](std::vector<uint8_t> &buf, uint32_t val) {
+			buf.push_back((uint8_t)(val & 0xff));
+			buf.push_back((uint8_t)((val >> 8) & 0xff));
+			buf.push_back((uint8_t)((val >> 16) & 0xff));
+			buf.push_back((uint8_t)(val >> 24));
+		};
+		int add = 4 * (int)top_layer.size();  // top layer (grid)
 		for (int i = 0; i < (int)top_layer.size(); i++) {
 			int data = top_layer[i];
-			int p = data == -1 ? 0 : 2 * 8 * data + add;
-			result.push_back((uint16_t)(p & 0xffff));
-			result.push_back((uint16_t)(p >> 16));
+			int p = data == -1 ? 0 : 4 * 8 * data + add;
+			pushUint32(result, p);
 		}
 		std::vector<int> bottom_layer_add;  // pointers to bottom layer
 		bottom_layer_add.push_back(0);
 		for (int i = 0; i < (int)bottom_layer.size(); i++) {
-			int sz = 1 + 11 * bottom_layer[i].n;
+			int sz = 1 + 12 * bottom_layer[i].n;
 			bottom_layer_add.push_back(bottom_layer_add.back() + sz);
 		}
 		for (int j = (int)middle_layers.size(); j--;) {  // middle layers
-			add += 2 * 8 * (int)middle_layers[j].size();
+			add += 4 * 8 * (int)middle_layers[j].size();
 			for (int i = 0; i < (int)middle_layers[j].size(); i++) {
 				for (int _ = 0; _ < 8; _++) {
 					int data = middle_layers[j][i].c[_];
-					int p = data == -1 ? 0 : (j > 0 ? 2 * 8 * data : bottom_layer_add[data]) + add;
-					result.push_back((uint16_t)(p & 0xffff));
-					result.push_back((uint16_t)(p >> 16));
+					int p = data == -1 ? 0 : (j > 0 ? 4 * 8 * data : bottom_layer_add[data]) + add;
+					pushUint32(result, p);
 				}
 			}
 		}
 		add += bottom_layer_add.back();  // bottom layer
 		for (int i = 0; i < (int)bottom_layer.size(); i++) {
 			int data = bottom_layer[i].n;
-			result.push_back((uint16_t)data);
+			result.push_back((uint8_t)data);
 			for (int j = 0; j < bottom_layer[i].n; j++) {
 				int trig_i = bottom_layer[i].t[j];
 				vec3 col = vec3(0.0);
 				for (int _ = 0; _ < 3; _++) {
 					int vi = ((int*)&triangles_v[trig_i])[_];
-					result.push_back((uint16_t)(vertices[vi].x));
-					result.push_back((uint16_t)(vertices[vi].y));
-					result.push_back((uint16_t)(vertices[vi].z));
+					ivec3 v = vertices[vi] - bottom_layer[i].po * EDGE_ROUNDING;
+					result.push_back((uint8_t)(v.x));
+					result.push_back((uint8_t)(v.y));
+					result.push_back((uint8_t)(v.z));
 					col += vert_cols[vi];
 				}
 				ivec3 rgb = ivec3(255.0*clamp(col / 3.0, 0.0, 1.0) + 0.5);
-				result.push_back(rgb.x + rgb.y * 256);
-				result.push_back(rgb.z);
+				result.push_back((uint8_t)rgb.x);
+				result.push_back((uint8_t)rgb.y);
+				result.push_back((uint8_t)rgb.z);
 			}
 		}
 		return result;
@@ -624,7 +638,7 @@ namespace ScalarFieldTriangulator_octatree {
 
 	// octatree to buffer
 	template<typename Fun>
-	std::vector<uint16_t> octatree_buffer(Fun fun, vec3 p0, vec3 p1, ivec3 dif, int plot_depth, int edge_rounding,
+	std::vector<uint8_t> octatree_buffer(Fun fun, vec3 p0, vec3 p1, ivec3 dif, int plot_depth, int edge_rounding,
 		vec3(*colorf)(vec3)) {
 		__private__::fun = fun;
 		__private__::P0 = p0, __private__::P1 = p1;

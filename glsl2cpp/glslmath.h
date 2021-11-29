@@ -32,22 +32,27 @@ struct ivec2
 	ivec2 operator-(const ivec2 &v) const { return ivec2(x - v.x, y - v.y); }
 	ivec2 operator*(const ivec2 &v) const { return ivec2(x * v.x, y * v.y); }
 	ivec2 operator/(const ivec2 &v) const { return ivec2(x / v.x, y / v.y); }
+	ivec2 operator%(const ivec2 &v) const { return ivec2(x % v.x, y % v.y); }
 	ivec2 operator+(const int &a) const { return ivec2(x + a, y + a); }
 	ivec2 operator-(const int &a) const { return ivec2(x - a, y - a); }
 	ivec2 operator*(const int &a) const { return ivec2(x * a, y * a); }
 	ivec2 operator/(const int &a) const { return ivec2(x / a, y / a); }
+	ivec2 operator%(const int &a) const { return ivec2(x % a, y % a); }
 	ivec2 operator+=(const ivec2 &v) { x += v.x, y += v.y; return *this; }
 	ivec2 operator-=(const ivec2 &v) { x -= v.x, y -= v.y; return *this; }
 	ivec2 operator*=(const ivec2 &v) { x *= v.x, y *= v.y; return *this; }
 	ivec2 operator/=(const ivec2 &v) { x /= v.x, y /= v.y; return *this; }
+	ivec2 operator%=(const ivec2 &v) { x %= v.x, y %= v.y; return *this; }
 	ivec2 operator+=(const int &a) { x += a, y += a; return *this; }
 	ivec2 operator-=(const int &a) { x -= a, y -= a; return *this; }
 	ivec2 operator*=(const int &a) { x *= a, y *= a; return *this; }
 	ivec2 operator/=(const int &a) { x /= a, y /= a; return *this; }
+	ivec2 operator%=(const int &a) { x %= a, y %= a; return *this; }
 	friend ivec2 operator+(const int &a, const ivec2 &v) { return ivec2(a + v.x, a + v.y); }
 	friend ivec2 operator-(const int &a, const ivec2 &v) { return ivec2(a - v.x, a - v.y); }
 	friend ivec2 operator*(const int &a, const ivec2 &v) { return ivec2(a * v.x, a * v.y); }
 	friend ivec2 operator/(const int &a, const ivec2 &v) { return ivec2(a / v.x, a / v.y); }
+	friend ivec2 operator%(const int &a, const ivec2 &v) { return ivec2(a % v.x, a % v.y); }
 };
 
 struct ivec3
@@ -66,22 +71,27 @@ struct ivec3
 	ivec3 operator-(const ivec3 &v) const { return ivec3(x - v.x, y - v.y, z - v.z); }
 	ivec3 operator*(const ivec3 &v) const { return ivec3(x * v.x, y * v.y, z * v.z); }
 	ivec3 operator/(const ivec3 &v) const { return ivec3(x / v.x, y / v.y, z / v.z); }
+	ivec3 operator%(const ivec3 &v) const { return ivec3(x % v.x, y % v.y, z % v.z); }
 	ivec3 operator+(const int &a) const { return ivec3(x + a, y + a, z + a); }
 	ivec3 operator-(const int &a) const { return ivec3(x - a, y - a, z - a); }
 	ivec3 operator*(const int &a) const { return ivec3(x * a, y * a, z * a); }
 	ivec3 operator/(const int &a) const { return ivec3(x / a, y / a, z / a); }
+	ivec3 operator%(const int &a) const { return ivec3(x % a, y % a, z % a); }
 	ivec3 operator+=(const ivec3 &v) { x += v.x, y += v.y, z += v.z; return *this; }
 	ivec3 operator-=(const ivec3 &v) { x -= v.x, y -= v.y, z -= v.z; return *this; }
 	ivec3 operator*=(const ivec3 &v) { x *= v.x, y *= v.y, z *= v.z; return *this; }
 	ivec3 operator/=(const ivec3 &v) { x /= v.x, y /= v.y, z /= v.z; return *this; }
+	ivec3 operator%=(const ivec3 &v) { x %= v.x, y %= v.y, z %= v.z; return *this; }
 	ivec3 operator+=(const int &a) { x += a, y += a, z += a; return *this; }
 	ivec3 operator-=(const int &a) { x -= a, y -= a, z -= a; return *this; }
 	ivec3 operator*=(const int &a) { x *= a, y *= a, z *= a; return *this; }
 	ivec3 operator/=(const int &a) { x /= a, y /= a, z /= a; return *this; }
+	ivec3 operator%=(const int &a) { x %= a, y %= a, z %= a; return *this; }
 	friend ivec3 operator+(const int &a, const ivec3 &v) { return ivec3(a + v.x, a + v.y, a + v.z); }
 	friend ivec3 operator-(const int &a, const ivec3 &v) { return ivec3(a - v.x, a - v.y, a - v.z); }
 	friend ivec3 operator*(const int &a, const ivec3 &v) { return ivec3(a * v.x, a * v.y, a * v.z); }
 	friend ivec3 operator/(const int &a, const ivec3 &v) { return ivec3(a / v.x, a / v.y, a / v.z); }
+	friend ivec3 operator%(const int &a, const ivec3 &v) { return ivec3(a % v.x, a % v.y, a % v.z); }
 };
 
 struct ivec4
@@ -103,22 +113,27 @@ struct ivec4
 	ivec4 operator-(const ivec4 &v) const { return ivec4(x - v.x, y - v.y, z - v.z, w - v.w); }
 	ivec4 operator*(const ivec4 &v) const { return ivec4(x * v.x, y * v.y, z * v.z, w * v.w); }
 	ivec4 operator/(const ivec4 &v) const { return ivec4(x / v.x, y / v.y, z / v.z, w / v.w); }
+	ivec4 operator%(const ivec4 &v) const { return ivec4(x % v.x, y % v.y, z % v.z, w % v.w); }
 	ivec4 operator+(const int &a) const { return ivec4(x + a, y + a, z + a, w + a); }
 	ivec4 operator-(const int &a) const { return ivec4(x - a, y - a, z - a, w - a); }
 	ivec4 operator*(const int &a) const { return ivec4(x * a, y * a, z * a, w * a); }
 	ivec4 operator/(const int &a) const { return ivec4(x / a, y / a, z / a, w / a); }
+	ivec4 operator%(const int &a) const { return ivec4(x % a, y % a, z % a, w % a); }
 	ivec4 operator+=(const ivec4 &v) { x += v.x, y += v.y, z += v.z, w += v.w; return *this; }
 	ivec4 operator-=(const ivec4 &v) { x -= v.x, y -= v.y, z -= v.z, w -= v.w; return *this; }
 	ivec4 operator*=(const ivec4 &v) { x *= v.x, y *= v.y, z *= v.z, w *= v.w; return *this; }
 	ivec4 operator/=(const ivec4 &v) { x /= v.x, y /= v.y, z /= v.z, w /= v.w; return *this; }
+	ivec4 operator%=(const ivec4 &v) { x %= v.x, y %= v.y, z %= v.z, w %= v.w; return *this; }
 	ivec4 operator+=(const int &a) { x += a, y += a, z += a, w += a; return *this; }
 	ivec4 operator-=(const int &a) { x -= a, y -= a, z -= a, w -= a; return *this; }
 	ivec4 operator*=(const int &a) { x *= a, y *= a, z *= a, w *= a; return *this; }
 	ivec4 operator/=(const int &a) { x /= a, y /= a, z /= a, w /= a; return *this; }
+	ivec4 operator%=(const int &a) { x %= a, y %= a, z %= a, w %= a; return *this; }
 	friend ivec4 operator+(const int &a, const ivec4 &v) { return ivec4(a + v.x, a + v.y, a + v.z, a + v.w); }
 	friend ivec4 operator-(const int &a, const ivec4 &v) { return ivec4(a - v.x, a - v.y, a - v.z, a - v.w); }
 	friend ivec4 operator*(const int &a, const ivec4 &v) { return ivec4(a * v.x, a * v.y, a * v.z, a * v.w); }
 	friend ivec4 operator/(const int &a, const ivec4 &v) { return ivec4(a / v.x, a / v.y, a / v.z, a / v.w); }
+	friend ivec4 operator%(const int &a, const ivec4 &v) { return ivec4(a % v.x, a % v.y, a % v.z, a % v.w); }
 };
 
 struct vec2
