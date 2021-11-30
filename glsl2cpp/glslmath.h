@@ -1037,6 +1037,7 @@ float clamp(float x, float a, float b) { return x < a ? a : x > b ? b : x; }
 float saturate(float x) { return clamp(x, 0.0f, 1.0f); }
 float mod(float x, float y) { return x - y * floorf(x / y); }
 float step(float edge, float x) { return x < edge ? 0.0f : 1.0f; }
+float mix(float x, float y, float a) { return x * (1.0f - a) + y * a; }
 template <typename vec>
 vec mix(vec x, vec y, float a) { return x * (1.0f - a) + y * a; }
 template <typename vec>

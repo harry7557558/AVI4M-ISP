@@ -30,7 +30,7 @@
 #define WinW_Offset 16
 #define WinH_Offset 39
 
-void Init(char* argv[]);  // called before window is created
+void Init(char* argv[]);
 void render();
 void WindowResize(int _oldW, int _oldH, int _W, int _H);
 void WindowClose();
@@ -95,6 +95,7 @@ int main(int argc, char* argv[]) {
 
 
 #include "octatree.h"
+
 #include "../octatree/trigs2mesh.h"
 #include "../octatree/ply_writer.h"
 
@@ -112,22 +113,32 @@ vec4 iMouse = vec4(0, 0, 0, 0);
 
 vec4 *FrameBuffer = nullptr;
 
-#define P0 vec3(-2.0f)
-#define P1 vec3(2.0f)
-#define SEARCH_DIF ivec3(4, 4, 4)
-#define PLOT_DEPTH 2
-#define GRID_SIZE (SEARCH_DIF*(1<<PLOT_DEPTH))
-#define EDGE_ROUNDING 128
+#define P0 vec3(-2.0f, -2.0f, -1.5f) /* min coordinates of grid */
+#define P1 vec3(2.0f, 2.0f, 1.5f) /* max coordinates of grid */
+#define GRID_DIF ivec3(2, 2, 1) /* initial grid size */
+#define PLOT_DEPTH 8 /* depth of tree */
+#define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
+#define EDGE_ROUNDING 128 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
 
+#define GRID_EXPAND 4 /* pre-sample this number of layers in tree */
+#define SEARCH_DIF_EXP (GRID_DIF*(1<<GRID_EXPAND))
+#define PLOT_DEPTH_EXP (PLOT_DEPTH-GRID_EXPAND)
+
+
+#if 1
+#include "test-models/nautilus_shell.h"
+#else
 vec4 map(vec3 p, bool col_required) {
-	float d = length(p) - 1.0 + 0.2*sin(10.0*p.x)*sin(10.0*p.y)*sin(10.0*p.z);
+	//float d = length(p) - 1.0 + 0.2*sin(10.0*p.x)*sin(10.0*p.y)*sin(10.0*p.z);
 	//float d = min(length(vec2(length(p.xy()) - 1.0f, p.z)) - 0.5f, length(p) - 0.1f);
 	//float d = sin(1.57*p.x)*sin(1.57*p.y)*sin(1.57*p.z) - 0.1;
 	//float d = p.x + p.y - p.x*p.y;
 	//float d = log(0.1*(exp(p.x) + exp(p.y) + exp(p.z)));
+	float d = max(abs(length(vec2(length(p.xy()) - 1.0, p.z)) - 0.5) - 0.05, p.z);
 	return vec4(0.5 + 0.5*p, d);
 }
+#endif
 float sdf(vec3 p) { return map(p, false).w; }
 vec3 colorf(vec3 p) { return map(p, true).xyz(); }
 
@@ -206,8 +217,8 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	if (t <= 0.0 || t > t1) return false;
 
 	// grid
-	for (int xi = 0; xi < SEARCH_DIF.x; xi++) for (int yi = 0; yi < SEARCH_DIF.y; yi++) for (int zi = 0; zi < SEARCH_DIF.z; zi++) {
-		int grid_pos = getUint32(4 * ((zi * SEARCH_DIF.y + yi) * SEARCH_DIF.x + xi));
+	for (int xi = 0; xi < GRID_DIF.x; xi++) for (int yi = 0; yi < GRID_DIF.y; yi++) for (int zi = 0; zi < GRID_DIF.z; zi++) {
+		int grid_pos = getUint32(4 * ((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
 		if (grid_pos == 0) continue;
 
 		// tree traversal
@@ -306,7 +317,7 @@ vec3 mainRender(vec3 ro, vec3 rd) {
 		if (intersectObject(ro, rd, t, min_t, n, col) && t < min_t) {
 			min_t = t, min_n = normalize(n);
 			material = MAT_OBJECT;
-			//return col * max(dot(min_n, -rd), 0.0);
+			//return col * abs(dot(min_n, -rd));
 		}
 		//return vec3(0, 0, 0);
 
@@ -423,9 +434,9 @@ void render() {
 
 void exportModel(const char* filepath) {
 	// compute parameters
-	vec3 cell_size = (P1 - P0) / (vec3(SEARCH_DIF) * exp2(PLOT_DEPTH));
+	vec3 cell_size = (P1 - P0) / (vec3(SEARCH_DIF_EXP) * exp2(PLOT_DEPTH_EXP));
 	float epsilon = 0.001f * std::min({ cell_size.x, cell_size.y, cell_size.z });
-	printf("%d %d %d  %d  epsilon=%.2g\n", SEARCH_DIF.x, SEARCH_DIF.y, SEARCH_DIF.z, 1 << PLOT_DEPTH, epsilon);
+	printf("%d %d %d  %d  epsilon=%.2g\n", SEARCH_DIF_EXP.x, SEARCH_DIF_EXP.y, SEARCH_DIF_EXP.z, 1 << PLOT_DEPTH_EXP, epsilon);
 
 	// marching cube
 	int eval_count = 0;
@@ -433,7 +444,7 @@ void exportModel(const char* filepath) {
 	std::vector<triangle_3d> trigs = ScalarFieldTriangulator_octatree::octatree(
 		[&](vec3 p) { eval_count++; return GLSL::sdf(p); },
 		P0, P1,
-		SEARCH_DIF, PLOT_DEPTH
+		SEARCH_DIF_EXP, PLOT_DEPTH_EXP
 	);
 	float triangulate_time = std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - triangulate_start).count();
 	printf("%.1fms, %d evaluations\n", 1000.0f*triangulate_time, eval_count);
@@ -467,7 +478,7 @@ void exportTree() {
 	GLSL::treeSampler = ScalarFieldTriangulator_octatree::octatree_buffer(
 		GLSL::sdf,
 		P0, P1,
-		SEARCH_DIF, PLOT_DEPTH, EDGE_ROUNDING,
+		SEARCH_DIF_EXP, PLOT_DEPTH_EXP, EDGE_ROUNDING,
 		GLSL::colorf
 	);
 	printf("Tree sampler: %.2f MB\n", GLSL::treeSampler.size() / exp2(20));
