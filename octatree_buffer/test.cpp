@@ -113,12 +113,12 @@ vec4 iMouse = vec4(0, 0, 0, 0);
 
 vec4 *FrameBuffer = nullptr;
 
-#define P0 vec3(-2.0f, -2.0f, -1.5f) /* min coordinates of grid */
-#define P1 vec3(2.0f, 2.0f, 1.5f) /* max coordinates of grid */
-#define GRID_DIF ivec3(2, 2, 1) /* initial grid size */
-#define PLOT_DEPTH 8 /* depth of tree */
+#define P0 vec3(-2.0, -2.0, -1.5) /* min coordinates of grid */
+#define P1 vec3(2.0, 2.0, 1.5) /* max coordinates of grid */
+#define GRID_DIF ivec3(2, 2, 1) /* initial grid size, at least one odd component */
+#define PLOT_DEPTH 8 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
-#define EDGE_ROUNDING 128 /* divide edge into # intervals and round to integer coordinate */
+#define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
 
 #define GRID_EXPAND 4 /* pre-sample this number of layers in tree */
@@ -130,12 +130,12 @@ vec4 *FrameBuffer = nullptr;
 #include "test-models/nautilus_shell.h"
 #else
 vec4 map(vec3 p, bool col_required) {
-	//float d = length(p) - 1.0 + 0.2*sin(10.0*p.x)*sin(10.0*p.y)*sin(10.0*p.z);
+	float d = length(p) - 1.0 + 0.2*sin(10.0*p.x)*sin(10.0*p.y)*sin(10.0*p.z);
 	//float d = min(length(vec2(length(p.xy()) - 1.0f, p.z)) - 0.5f, length(p) - 0.1f);
 	//float d = sin(1.57*p.x)*sin(1.57*p.y)*sin(1.57*p.z) - 0.1;
 	//float d = p.x + p.y - p.x*p.y;
 	//float d = log(0.1*(exp(p.x) + exp(p.y) + exp(p.z)));
-	float d = max(abs(length(vec2(length(p.xy()) - 1.0, p.z)) - 0.5) - 0.05, p.z);
+	//float d = max(abs(length(vec2(length(p.xy()) - 1.0, p.z)) - 0.5) - 0.05, p.z);
 	return vec4(0.5 + 0.5*p, d);
 }
 #endif
@@ -165,14 +165,14 @@ ivec3 getUvec3(int i) {
 	return ivec3(x, y, z);
 }
 
-float intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
+vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
 	vec3 p = -inv_rd * ro;
 	vec3 k = abs(inv_rd)*r;
 	vec3 t1 = p - k, t2 = p + k;
 	float tN = max(max(t1.x, t1.y), t1.z);
 	float tF = min(min(t2.x, t2.y), t2.z);
-	if (tN > tF || tF < 0.0) return -1.0;
-	return tN < 0.0 ? tF : tN;
+	if (tN > tF || tF < 0.0) return vec2(-1.0);
+	return vec2(tN, tF);
 }
 vec3 normalBox(vec3 p, vec3 r) {
 	vec3 d = abs(p) - r + 1e-4;
@@ -213,8 +213,8 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	min_t = t1;
 
 	// bounding box
-	t = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), 1.0 / rd);
-	if (t <= 0.0 || t > t1) return false;
+	vec2 ib = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), 1.0 / rd);
+	if (ib.y <= 0.0 || ib.x > t1) return false;
 
 	// grid
 	for (int xi = 0; xi < GRID_DIF.x; xi++) for (int yi = 0; yi < GRID_DIF.y; yi++) for (int zi = 0; zi < GRID_DIF.z; zi++) {
@@ -238,8 +238,8 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 				p0 = mix(P0, P1, vec3(cur.pos) / vec3(GRID_SIZE));
 				p1 = mix(P0, P1, vec3(cur.pos + cell_size) / vec3(GRID_SIZE));
 				vec3 r = 0.5*(p1 - p0), c = 0.5*(p0 + p1);
-				t = intersectBox(r, ro - c, 1.0 / rd);
-				if (!(t > 0.0 && t < min_t)) cur.ptr = 0;
+				ib = intersectBox(r, ro - c, 1.0 / rd);
+				if (!(ib.y > 0.0 && ib.x < min_t)) cur.ptr = 0;
 			}
 
 			// go into subtree
@@ -536,6 +536,7 @@ void MouseMove(int _X, int _Y) {
 	_RenderNeeded = true;
 }
 void MouseUpL(int _X, int _Y) {
+	printf("Mouse click at (%d, %d)\n", _X, _Y);
 	GLSL::iMouse.zw() = -abs(GLSL::iMouse.zw());
 	_RenderNeeded = true;
 }

@@ -12,12 +12,12 @@ uniform vec2 iResolution;
 uniform highp usampler2D uTreeBuffer;
 
 
-#define P0 vec3(-2.0)
-#define P1 vec3(2.0)
-#define SEARCH_DIF ivec3(4, 4, 4)
-#define PLOT_DEPTH 2
-#define GRID_SIZE (SEARCH_DIF*(1<<PLOT_DEPTH))
-#define EDGE_ROUNDING 128
+#define P0 vec3(-2.0, -2.0, -2.0) /* min coordinates of grid */
+#define P1 vec3(2.0, 2.0, 2.0) /* max coordinates of grid */
+#define GRID_DIF ivec3(1, 1, 1) /* initial grid size, at least one odd component */
+#define PLOT_DEPTH 4 /* depth of the tree */
+#define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
+#define EDGE_ROUNDING 128 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
 
 
@@ -40,14 +40,14 @@ ivec3 getUvec3(int i) {
 }
 
 
-float intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
+vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
 	vec3 p = -inv_rd * ro;
 	vec3 k = abs(inv_rd)*r;
 	vec3 t1 = p - k, t2 = p + k;
 	float tN = max(max(t1.x, t1.y), t1.z);
 	float tF = min(min(t2.x, t2.y), t2.z);
-	if (tN > tF || tF < 0.0) return -1.0;
-	return tN < 0.0 ? tF : tN;
+	if (tN > tF || tF < 0.0) return vec2(-1.0);
+	return vec2(tN, tF);
 }
 
 float intersectTriangle(vec3 ro, vec3 rd, vec3 v0, vec3 v1, vec3 v2) {
@@ -83,12 +83,12 @@ bool intersectObject(vec3 ro, vec3 rd, out float min_t, float t1, out vec3 min_n
 	min_t = t1;
 
 	// bounding box
-	t = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), 1.0 / rd);
-	if (t <= 0.0 || t > t1) return false;
+	vec2 ib = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), 1.0 / rd);
+	if (ib.y <= 0.0 || ib.x > t1) return false;
 
 	// grid
-	for (int xi = 0; xi < SEARCH_DIF.x; xi++) for (int yi = 0; yi < SEARCH_DIF.y; yi++) for (int zi = 0; zi < SEARCH_DIF.z; zi++) {
-		int grid_pos = getUint32(4 * ((zi * SEARCH_DIF.y + yi) * SEARCH_DIF.x + xi));
+	for (int xi = 0; xi < GRID_DIF.x; xi++) for (int yi = 0; yi < GRID_DIF.y; yi++) for (int zi = 0; zi < GRID_DIF.z; zi++) {
+		int grid_pos = getUint32(4 * ((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
 		if (grid_pos == 0) continue;
 
 		// tree traversal
@@ -108,8 +108,8 @@ bool intersectObject(vec3 ro, vec3 rd, out float min_t, float t1, out vec3 min_n
 				p0 = mix(P0, P1, vec3(cur.pos) / vec3(GRID_SIZE));
 				p1 = mix(P0, P1, vec3(cur.pos + cell_size) / vec3(GRID_SIZE));
 				vec3 r = 0.5*(p1 - p0), c = 0.5*(p0 + p1);
-				t = intersectBox(r, ro - c, 1.0 / rd);
-				if (!(t > 0.0 && t < min_t)) cur.ptr = 0;
+				ib = intersectBox(r, ro - c, 1.0 / rd);
+				if (!(ib.y > 0.0 && ib.x < min_t)) cur.ptr = 0;
 			}
 
 			// go into subtree

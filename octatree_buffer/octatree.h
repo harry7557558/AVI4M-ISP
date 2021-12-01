@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <map>
 
+#include <chrono>
+#include <string>
+
 #include "../octatree/trigs2mesh.h"
 
 
@@ -18,7 +21,39 @@
 
 ScalarFieldTriangulator_octatree_BEGIN_
 
+bool verbose = true;
+
 ScalarFieldTriangulator_octatree_PRIVATE_BEGIN_
+
+// Timing
+
+std::map<std::string, std::chrono::high_resolution_clock::time_point> time_events;
+void timeEventStart(std::string name) {
+	int stack_size = time_events.size();
+	auto t = std::chrono::high_resolution_clock::now();
+	time_events[name] = t;
+	if (verbose) {
+		while (stack_size--) printf("  ");
+		//printf("S: %s\n", &name[0]);
+		printf("%s", &name[0]);
+	}
+}
+void timeEventEnd(std::string name) {
+	if (time_events.find(name) == time_events.end()) {
+		fprintf(stderr, "No event \"%s\" found.\n", &name[0]);
+	}
+	else {
+		auto t0 = time_events[name];
+		time_events.erase(name);
+		double dt = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - t0).count();
+		int stack_size = time_events.size();
+		if (verbose) {
+			while (stack_size--) printf("  ");
+			//printf("E: %s, %.1lf ms\n", &name[0], 1000.0*dt);
+			printf(" - %.1lf ms\n", 1000.0*dt);
+		}
+	}
+}
 
 
 /* LOOKUP TABLES */
@@ -324,6 +359,7 @@ std::vector<octatree_node*> cells;
 void octatree_main() {
 
 	// initialize octatree root
+	timeEventStart("sample octatree root");
 	create_octatree();
 	for (int x = 0; x <= SEARCH_DIF.x; x++) {
 		for (int y = 0; y <= SEARCH_DIF.y; y++) {
@@ -357,9 +393,13 @@ void octatree_main() {
 			}
 		}
 	}
+	timeEventEnd("sample octatree root");
 
 	// subdivide grid cells
-	for (int size = CELL_PLOT_SIZE; size > 1;) {
+	for (int layer = 1, size = CELL_PLOT_SIZE; size > 1; layer++) {
+		std::string event_name = "subdivide octatree layer " + std::to_string(layer) + "/" + std::to_string(PLOT_DEPTH);
+		timeEventStart(event_name);
+
 		std::vector<octatree_node*> new_cells;
 		int s2 = size / 2;
 		for (int i = 0; i < (int)cells.size(); i++) {
@@ -398,6 +438,8 @@ void octatree_main() {
 				ci->edge_checked[u] = true;
 			}
 		}
+
+		timeEventEnd(event_name);
 	}
 }
 
@@ -427,6 +469,7 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 	octatree_main();
 
 	// triangles + bottom layer
+	timeEventStart("reconstruct triangles");
 	struct Triangle {
 		ivec3 a, b, c;
 	};
@@ -461,8 +504,10 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 		}
 	}
 	//std::sort(bottom_layer.begin(), bottom_layer.end(), [](TriangleNode a, TriangleNode b) { return a.p < b.p; });
+	timeEventEnd("reconstruct triangles");
 
 	// middle layers
+	timeEventStart("restore layers");
 	struct Node {
 		octatree_node *p;  // cell ID
 		int c[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
@@ -478,7 +523,7 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 		n.p = bottom_layer[i].p;
 		layer.push_back(n);
 	}
-	for (int h = PLOT_DEPTH; h--;) {
+	for (int h = PLOT_DEPTH; h > 0; h--) {
 		std::vector<Pi> pc_map;  // parent, child
 		for (int i = 0; i < (int)layer.size(); i++) {
 			pc_map.push_back(Pi{ layer[i].p->parent, i });
@@ -503,8 +548,10 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 		middle_layers.push_back(prev_layer);
 		layer = prev_layer;
 	}
+	timeEventEnd("restore layers");
 
 	// top layer (grid)
+	timeEventStart("reconstruct grid");
 	std::vector<int> top_layer;
 	for (int i = SEARCH_DIF.x*SEARCH_DIF.y*SEARCH_DIF.z; i--;) top_layer.push_back(-1);
 	std::map<octatree_node*, int> pimap;
@@ -518,11 +565,15 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 			}
 		}
 	}
+	timeEventEnd("reconstruct grid");
 
 	// release memory
+	timeEventStart("destroy octatree");
 	destroy_octatree();
+	timeEventEnd("destroy octatree");
 
 	// shrink grid
+	timeEventStart("shrink grid");
 	ivec3 GRID_DIF = SEARCH_DIF;
 	while (shrink_grid && (GRID_DIF.x % 2 == 0 && GRID_DIF.y % 2 == 0 && GRID_DIF.z % 2 == 0)) {
 
@@ -557,8 +608,10 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 		top_layer = prev_top_layer;
 		middle_layers.push_back(layer);
 	}
+	timeEventEnd("shrink grid");
 
 	// triangles to mesh
+	timeEventStart("triangles to mesh");
 	struct PosI {
 		ivec3 p;
 		int i;
@@ -586,13 +639,17 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 				((int*)&triangles_v[i])[_] = (int)vertices.size() - 1;
 		}
 	}
+	timeEventEnd("triangles to mesh");
+	timeEventStart("coloring");
 	std::vector<vec3> vert_cols;
 	for (ivec3 p : vertices) {
 		vec3 q = mix(P0, P1, vec3(p) / vec3(MESH_SIZE));
 		vert_cols.push_back(colorf(q));
 	}
+	timeEventEnd("coloring");
 
 	// put layers together
+	timeEventStart("encode buffer");
 	std::vector<uint8_t> result;
 	auto pushUint16 = [](std::vector<uint8_t> &buf, uint16_t val) {
 		buf.push_back((uint8_t)(val & 0xff));
@@ -647,6 +704,7 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 			result.push_back((uint8_t)rgb.z);
 		}
 	}
+	timeEventEnd("encode buffer");
 	return result;
 }
 
