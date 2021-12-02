@@ -103,30 +103,36 @@ int main(int argc, char* argv[]) {
 #define NAMESPACE_GLSL_BEGIN namespace GLSL {
 #define NAMESPACE_GLSL_END }
 
+// for attributing arrays to fit GLSL
+#define out
+#define inout
+
 NAMESPACE_GLSL_BEGIN
 
 float iRx = 0.3;
 float iRz = 0.5;
-float iSc = 1.0;
+float iSc = 0.5;
 vec3 iResolution = vec3(0, 0, 1);
 vec4 iMouse = vec4(0, 0, 0, 0);
 
 vec4 *FrameBuffer = nullptr;
 
-#define P0 vec3(-2.0, -2.0, -1.5) /* min coordinates of grid */
-#define P1 vec3(2.0, 2.0, 1.5) /* max coordinates of grid */
-#define GRID_DIF ivec3(2, 2, 1) /* initial grid size, at least one odd component */
-#define PLOT_DEPTH 8 /* depth of the tree */
+#define ZERO 0
+
+#define P0 vec3(-2.0, -2.0, -2.0) /* min coordinates of grid */
+#define P1 vec3(2.0, 2.0, 2.0) /* max coordinates of grid */
+#define GRID_DIF ivec3(1, 1, 1) /* initial grid size, at least one odd component */
+#define PLOT_DEPTH 4 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
 
-#define GRID_EXPAND 4 /* pre-sample this number of layers in tree */
+#define GRID_EXPAND 2 /* pre-sample this number of layers in tree */
 #define SEARCH_DIF_EXP (GRID_DIF*(1<<GRID_EXPAND))
 #define PLOT_DEPTH_EXP (PLOT_DEPTH-GRID_EXPAND)
 
 
-#if 1
+#if 0
 #include "test-models/nautilus_shell.h"
 #else
 vec4 map(vec3 p, bool col_required) {
@@ -165,19 +171,50 @@ ivec3 getUvec3(int i) {
 	return ivec3(x, y, z);
 }
 
+
+const ivec3 VERTEX_LIST[8] = {
+	ivec3(0,0,0), ivec3(0,1,0), ivec3(1,1,0), ivec3(1,0,0),
+	ivec3(0,0,1), ivec3(0,1,1), ivec3(1,1,1), ivec3(1,0,1)
+};
+
+struct BoxIntersection {
+	int i;  // index of subcell
+	vec2 t;  // near and far
+};
+
 vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
 	vec3 p = -inv_rd * ro;
 	vec3 k = abs(inv_rd)*r;
 	vec3 t1 = p - k, t2 = p + k;
 	float tN = max(max(t1.x, t1.y), t1.z);
 	float tF = min(min(t2.x, t2.y), t2.z);
-	if (tN > tF || tF < 0.0) return vec2(-1.0);
+	if (tN >= tF || tF < 0.0) return vec2(-1.0);
 	return vec2(tN, tF);
 }
-vec3 normalBox(vec3 p, vec3 r) {
-	vec3 d = abs(p) - r + 1e-4;
-	vec3 s = sign(p);
-	return s * normalize(max(d, vec3(0.0)));
+
+void intersectOctreeNode(vec3 r, vec3 ro, vec3 inv_rd, out BoxIntersection ints[8]) {
+	int n = 0;
+	for (int i = 0; i < 8; i++) {
+		vec3 c = 0.5 * vec3(2 * VERTEX_LIST[i] - 1) * r;
+		vec2 t = intersectBox(0.5*r, ro - c, inv_rd);
+		if (t.y > 0.0) {
+			ints[n].i = i;
+			ints[n].t = t;
+			n++;
+		}
+	}
+	// n sometimes goes greater than 4 due to floating point issue
+	n = min(n, 4);
+	ints[n].i = -1;
+	// sorting
+	BoxIntersection it;
+	for (int i = 0; i < n; i++) {
+		for (int j = 0; j < n - i - 1; j++) {
+			if (ints[j].t.x > ints[j + 1].t.x) {
+				it = ints[j], ints[j] = ints[j + 1], ints[j + 1] = it;
+			}
+		}
+	}
 }
 
 float intersectTriangle(vec3 ro, vec3 rd, vec3 v0, vec3 v1, vec3 v2) {
@@ -194,17 +231,16 @@ float intersectTriangle(vec3 ro, vec3 rd, vec3 v0, vec3 v1, vec3 v2) {
 	return t;
 }
 
-
-const ivec3 VERTEX_LIST[8] = {
-	ivec3(0,0,0), ivec3(0,1,0), ivec3(1,1,0), ivec3(1,0,0),
-	ivec3(0,0,1), ivec3(0,1,1), ivec3(1,1,1), ivec3(1,0,1)
-};
-
 // used for tree traversal
 struct TreeNode {
 	ivec3 pos;  // position of origin of the cell
 	int subcell;  // ID of subcell during traversal
+	BoxIntersection ints[8];  // distance of intersections of subcells
 	int ptr;  // position in the buffer
+	TreeNode() {}
+	TreeNode(const TreeNode &other) : pos(other.pos), subcell(other.subcell), ptr(other.ptr) {
+		for (int i = 0; i < 8; i++) ints[i] = other.ints[i];
+	}
 };
 
 // ray-object intersection, grid/tree lookup
@@ -215,6 +251,10 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	// bounding box
 	vec2 ib = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), 1.0 / rd);
 	if (ib.y <= 0.0 || ib.x > t1) return false;
+
+	int loop_count = 0;
+	int trig_int_count = 0;
+	int box_int_count = 0;
 
 	// grid
 	for (int xi = 0; xi < GRID_DIF.x; xi++) for (int yi = 0; yi < GRID_DIF.y; yi++) for (int zi = 0; zi < GRID_DIF.z; zi++) {
@@ -227,19 +267,22 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 		int cell_size = 1 << PLOT_DEPTH;
 		TreeNode cur;  // current node
 		cur.pos = ivec3(xi, yi, zi)*cell_size;
-		cur.subcell = 0;
+		cur.subcell = -1;
 		cur.ptr = grid_pos;
 		vec3 p0, p1;
 
 		while (true) {
+			loop_count++;
 
-			// test of current node is none
-			if (cur.ptr != 0) {
+			// calculate subtree
+			if (cur.subcell == -1 && cur.ptr != 0) {
+				box_int_count++;
 				p0 = mix(P0, P1, vec3(cur.pos) / vec3(GRID_SIZE));
 				p1 = mix(P0, P1, vec3(cur.pos + cell_size) / vec3(GRID_SIZE));
 				vec3 r = 0.5*(p1 - p0), c = 0.5*(p0 + p1);
-				ib = intersectBox(r, ro - c, 1.0 / rd);
-				if (!(ib.y > 0.0 && ib.x < min_t)) cur.ptr = 0;
+				intersectOctreeNode(r, ro - c, 1.0 / rd, cur.ints);
+				if (!(cur.ints[0].i >= 0 && cur.ints[0].t.y > 0.0 && cur.ints[0].t.x < min_t)) cur.ptr = 0;
+				else cur.subcell = 0;
 			}
 
 			// go into subtree
@@ -249,6 +292,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					int n = getUint8(cur.ptr);
 					ivec3 po = cur.pos * EDGE_ROUNDING;
 					for (int ti = 0; ti < n; ti++) {
+						trig_int_count++;
 						vec3 a = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 1)) / vec3(MESH_SIZE));
 						vec3 b = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 4)) / vec3(MESH_SIZE));
 						vec3 c = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 7)) / vec3(MESH_SIZE));
@@ -262,24 +306,36 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 				}
 				// subtree
 				else {
-					stk[++si] = cur, cell_size /= 2;
-					cur.subcell = 0;
-					cur.ptr = getUint32(cur.ptr);
+					stk[++si] = cur; cell_size /= 2;
+					cur.pos += VERTEX_LIST[cur.ints[0].i] * cell_size;
+					cur.ptr = getUint32(cur.ptr + 4 * cur.ints[0].i);
+					cur.subcell = -1;
+					if (cell_size != 1) {
+						box_int_count++;
+						p0 = mix(P0, P1, vec3(cur.pos) / vec3(GRID_SIZE));
+						p1 = mix(P0, P1, vec3(cur.pos + cell_size) / vec3(GRID_SIZE));
+						vec3 r = 0.5*(p1 - p0), c = 0.5*(p0 + p1);
+						intersectOctreeNode(r, ro - c, 1.0 / rd, cur.ints);
+						if (!(cur.ints[0].i >= 0 && cur.ints[0].t.y > 0.0 && cur.ints[0].t.x < min_t)) cur.ptr = 0;
+						else cur.subcell = 0;
+					}
 				}
 			}
 
 			// next node
 			else if (si != -1) {
-				cur = stk[si--], cell_size *= 2;
+				cur = stk[si--]; cell_size *= 2;
 				cur.subcell += 1;
-				if (cur.subcell >= 8) {
+				BoxIntersection intb = cur.ints[cur.subcell];
+				if (intb.i == -1 || intb.t.x > min_t) {
 					cur.ptr = 0;
+					while (cur.ints[cur.subcell].i != -1) cur.ints[cur.subcell++].i = -1;
 				}
 				else {
-					stk[++si] = cur, cell_size /= 2;
-					cur.pos = cur.pos + VERTEX_LIST[cur.subcell] * cell_size;
-					cur.ptr = getUint32(cur.ptr + 4 * cur.subcell);
-					cur.subcell = 0;
+					stk[++si] = cur; cell_size /= 2;
+					cur.pos = cur.pos + VERTEX_LIST[intb.i] * cell_size;
+					cur.ptr = getUint32(cur.ptr + 4 * intb.i);
+					cur.subcell = -1;
 				}
 			}
 
@@ -287,26 +343,44 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 		}
 	}
 
+	//col = vec3(loop_count, box_int_count, trig_int_count) / 255.0;
+	//col = vec3(box_int_count) / 255.0;
+	//col = vec3(1.0) * box_int_count / 255.0;
+
 	return min_t < t1;
 }
 
+#if 1
+// fast visualization
+vec3 mainRender(vec3 ro, vec3 rd) {
+	float t;
+	vec3 n, col = vec3(0.0);
+	if (intersectObject(ro, rd, t, 1e6, n, col)) {
+		return col;
+		//return col * abs(dot(normalize(n), rd));
+	}
+	return col;
+}
+#else
+// ray tracing
 vec3 mainRender(vec3 ro, vec3 rd) {
 	const int MAT_BACKGROUND = 0;
 	const int MAT_PLANE = 1;
 	const int MAT_OBJECT = 2;
 
-	vec3 m_col = vec3(1.0), t_col = vec3(0.0), col;
+	vec3 m_col = vec3(1.0), t_col = vec3(0.0);
 	bool inside_object = false;
 
-	for (int iter = 0; iter < 64; iter++) {
+	for (int iter = ZERO; iter < 64; iter++) {
 		rd = normalize(rd);
 		ro += 1e-4 * rd;
 		float t, min_t = 1e12;
 		vec3 n, min_n;
 		int material = MAT_BACKGROUND;
+		vec3 col = vec3(0.0);
 
 		// plane
-		t = -(ro.z - P0.z) / rd.z;
+		t = -(ro.z - (P0.z - 0.01)) / rd.z;
 		if (t > 0.0) {
 			min_t = t, min_n = vec3(0, 0, 1);
 			material = MAT_PLANE;
@@ -317,9 +391,7 @@ vec3 mainRender(vec3 ro, vec3 rd) {
 		if (intersectObject(ro, rd, t, min_t, n, col) && t < min_t) {
 			min_t = t, min_n = normalize(n);
 			material = MAT_OBJECT;
-			//return col * abs(dot(min_n, -rd));
 		}
-		//return vec3(0, 0, 0);
 
 		// update ray
 		if (material == MAT_BACKGROUND) {
@@ -340,8 +412,10 @@ vec3 mainRender(vec3 ro, vec3 rd) {
 	}
 	return m_col + t_col;
 }
+#endif
 
 void mainImage(vec4 &fragColor, vec2 fragCoord) {
+	//fragCoord = vec2(222.5, 81.5);
 	const float SCALE = 1.0f;  // larger = smaller (more view field)
 	const vec3 CENTER = vec3(0, 0, 0);
 	const float DIST = 20.0f;  // larger = smaller
@@ -415,14 +489,23 @@ void render() {
 	}, _WIN_W*_WIN_H);
 	float time_elapsed = std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - time_0).count();
 
-	// display image
+	// display image + statistics
+	vec3 avrcol = vec3(0.0), varcol = vec3(0.0);
+	vec3 mincol = vec3(1e12), maxcol = vec3(-1e12);
 	for (int j = 0; j < _WIN_H; j++) {
 		for (int i = 0; i < _WIN_W; i++) {
-			vec3 rgb = saturate(GLSL::FrameBuffer[j*_WIN_W + i].xyz());
-			COLORREF c = (COLORREF(255.0*rgb.x) << 16) | (COLORREF(255.0*rgb.y) << 8) | (COLORREF(255.0*rgb.z));
+			vec3 rgb = GLSL::FrameBuffer[j*_WIN_W + i].xyz();
+			avrcol += rgb, varcol += rgb * rgb, mincol = min(mincol, rgb), maxcol = max(maxcol, rgb);
+			ivec3 irgb = ivec3(255.0*saturate(rgb) + 0.5);
+			COLORREF c = (COLORREF(irgb.x) << 16) | (COLORREF(irgb.y) << 8) | (COLORREF(irgb.z));
 			_WINIMG[j*_WIN_W + i] = c;
 		}
 	}
+	int n = _WIN_W * _WIN_H;
+	avrcol = avrcol / n;
+	varcol = sqrt((varcol - n * avrcol * avrcol) / (n - 1));
+	printf("mu=(%.3g,%.3g,%.3g), var=(%.3g,%.3g,%.3g), min=(%.3g,%.3g,%.3g), max=(%.3g,%.3g,%.3g)\n",
+		avrcol.x, avrcol.y, avrcol.z, varcol.x, varcol.y, varcol.z, mincol.x, mincol.y, mincol.z, maxcol.x, maxcol.y, maxcol.z);
 
 	// the actual fps is less because of display time
 	char text[1024];
