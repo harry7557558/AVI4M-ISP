@@ -121,8 +121,8 @@ vec4 *FrameBuffer = nullptr;
 
 #define P0 vec3(-2.0, -2.0, -2.0) /* min coordinates of grid */
 #define P1 vec3(2.0, 2.0, 2.0) /* max coordinates of grid */
-#define GRID_DIF ivec3(1, 1, 1) /* initial grid size, at least one odd component */
-#define PLOT_DEPTH 4 /* depth of the tree */
+#define GRID_DIF ivec3(1) /* initial grid size, at least one odd component */
+#define PLOT_DEPTH 8 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
@@ -177,11 +177,6 @@ const ivec3 VERTEX_LIST[8] = {
 	ivec3(0,0,1), ivec3(0,1,1), ivec3(1,1,1), ivec3(1,0,1)
 };
 
-struct BoxIntersection {
-	int i;  // index of subcell
-	vec2 t;  // near and far
-};
-
 vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
 	vec3 p = -inv_rd * ro;
 	vec3 k = abs(inv_rd)*r;
@@ -192,34 +187,7 @@ vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
 	return vec2(tN, tF);
 }
 
-void intersectOctreeNode(vec3 r, vec3 ro, vec3 inv_rd, out BoxIntersection ints[8]) {
-	int n = 0;
-	for (int i = 0; i < 8; i++) {
-		vec3 c = 0.5 * vec3(2 * VERTEX_LIST[i] - 1) * r;
-		vec2 t = intersectBox(0.5*r, ro - c, inv_rd);
-		if (t.y > 0.0) {
-			ints[n].i = i;
-			ints[n].t = t;
-			n++;
-		}
-	}
-	// n sometimes goes greater than 4 due to floating point issue
-	n = min(n, 4);
-	ints[n].i = -1;
-	// sorting
-	BoxIntersection it;
-	for (int i = 0; i < n; i++) {
-		for (int j = 0; j < n - i - 1; j++) {
-			if (ints[j].t.x > ints[j + 1].t.x) {
-				it = ints[j], ints[j] = ints[j + 1], ints[j + 1] = it;
-			}
-		}
-	}
-}
-
-float intersectTriangle(vec3 ro, vec3 rd, vec3 v0, vec3 v1, vec3 v2) {
-	ro -= v0;
-	vec3 v01 = v1 - v0, v02 = v2 - v0;
+float intersectTriangle(vec3 ro, vec3 rd, vec3 v01, vec3 v02) {
 	vec3 n = cross(v01, v02);
 	vec3 q = cross(ro, rd);
 	float d = 1.0 / dot(rd, n);
@@ -231,16 +199,14 @@ float intersectTriangle(vec3 ro, vec3 rd, vec3 v0, vec3 v1, vec3 v2) {
 	return t;
 }
 
+// faster in CPU, similar speed in Chrome, slower in Firefox
+#define IN_DISTANCE_ORDER 1
+
 // used for tree traversal
 struct TreeNode {
 	ivec3 pos;  // position of origin of the cell
 	int subcell;  // ID of subcell during traversal
-	BoxIntersection ints[8];  // distance of intersections of subcells
 	int ptr;  // position in the buffer
-	TreeNode() {}
-	TreeNode(const TreeNode &other) : pos(other.pos), subcell(other.subcell), ptr(other.ptr) {
-		for (int i = 0; i < 8; i++) ints[i] = other.ints[i];
-	}
 };
 
 // ray-object intersection, grid/tree lookup
@@ -252,14 +218,39 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	vec2 ib = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), 1.0 / rd);
 	if (ib.y <= 0.0 || ib.x > t1) return false;
 
+	// calculate the order to traverse subcells
+	int subcell_order[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+#if IN_DISTANCE_ORDER
+	float dist[8];
+	for (int i = 0; i < 8; i++) {
+		dist[i] = dot(vec3(VERTEX_LIST[i]), rd);
+	}
+	for (int i = 1; i < 8; i++) {  // sorting
+		int soi = subcell_order[i];
+		float di = dist[i];
+		int j = i - 1;
+		while (j >= 0 && dist[j] > di) {
+			dist[j + 1] = dist[j];
+			subcell_order[j + 1] = subcell_order[j];
+			j--;
+		}
+		dist[j + 1] = di;
+		subcell_order[j + 1] = soi;
+	}
+#endif
+
+	vec3 inv_rd = 1.0 / rd;
+
+	// debug
 	int loop_count = 0;
 	int trig_int_count = 0;
 	int box_int_count = 0;
 
 	// grid
-	for (int xi = 0; xi < GRID_DIF.x; xi++) for (int yi = 0; yi < GRID_DIF.y; yi++) for (int zi = 0; zi < GRID_DIF.z; zi++) {
+	for (int xi = ZERO; xi < GRID_DIF.x; xi++) for (int yi = ZERO; yi < GRID_DIF.y; yi++) for (int zi = ZERO; zi < GRID_DIF.z; zi++) {
 		int grid_pos = getUint32(4 * ((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
 		if (grid_pos == 0) continue;
+		float cur_t1 = min_t;
 
 		// tree traversal
 		TreeNode stk[PLOT_DEPTH];  // stack
@@ -267,22 +258,20 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 		int cell_size = 1 << PLOT_DEPTH;
 		TreeNode cur;  // current node
 		cur.pos = ivec3(xi, yi, zi)*cell_size;
-		cur.subcell = -1;
+		cur.subcell = 0;
 		cur.ptr = grid_pos;
 		vec3 p0, p1;
 
 		while (true) {
 			loop_count++;
 
-			// calculate subtree
-			if (cur.subcell == -1 && cur.ptr != 0) {
+			// test if current node is none
+			if (cur.ptr != 0) {
 				box_int_count++;
-				p0 = mix(P0, P1, vec3(cur.pos) / vec3(GRID_SIZE));
-				p1 = mix(P0, P1, vec3(cur.pos + cell_size) / vec3(GRID_SIZE));
-				vec3 r = 0.5*(p1 - p0), c = 0.5*(p0 + p1);
-				intersectOctreeNode(r, ro - c, 1.0 / rd, cur.ints);
-				if (!(cur.ints[0].i >= 0 && cur.ints[0].t.y > 0.0 && cur.ints[0].t.x < min_t)) cur.ptr = 0;
-				else cur.subcell = 0;
+				vec3 c = mix(P0, P1, (vec3(cur.pos) + 0.5*float(cell_size)) / vec3(GRID_SIZE));
+				vec3 r = (P1 - P0) / vec3(GRID_SIZE) * 0.5 * float(cell_size);
+				ib = intersectBox(r, ro - c, inv_rd);
+				if (!(ib.y > 0.0 && ib.x < min_t)) cur.ptr = 0;
 			}
 
 			// go into subtree
@@ -293,32 +282,38 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					ivec3 po = cur.pos * EDGE_ROUNDING;
 					for (int ti = 0; ti < n; ti++) {
 						trig_int_count++;
+#if 0
 						vec3 a = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 1)) / vec3(MESH_SIZE));
 						vec3 b = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 4)) / vec3(MESH_SIZE));
 						vec3 c = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 7)) / vec3(MESH_SIZE));
-						t = intersectTriangle(ro, rd, a, b, c);
+						t = intersectTriangle(ro - a, rd, b - a, c - a);
 						if (t > 0.0 && t < min_t) {
 							min_t = t, min_n = cross(b - a, c - a);
 							col = vec3(getUvec3(cur.ptr + 12 * ti + 10)) / 255.0;
 						}
+#else
+						ivec3 vi0 = getUvec3(cur.ptr + 12 * ti + 1);
+						ivec3 vi1 = getUvec3(cur.ptr + 12 * ti + 4);
+						ivec3 vi2 = getUvec3(cur.ptr + 12 * ti + 7);
+						vec3 v0 = mix(P0, P1, vec3(po + vi0) / vec3(MESH_SIZE));
+						vec3 v01 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi1 - vi0);
+						vec3 v02 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi2 - vi0);
+						t = intersectTriangle(ro - v0, rd, v01, v02);
+						if (t > 0.0 && t < min_t) {
+							min_t = t, min_n = cross(v01, v02);
+							col = vec3(getUvec3(cur.ptr + 12 * ti + 10)) / 255.0;
+						}
+#endif
 					}
 					cur.ptr = 0;
 				}
 				// subtree
 				else {
-					stk[++si] = cur; cell_size /= 2;
-					cur.pos += VERTEX_LIST[cur.ints[0].i] * cell_size;
-					cur.ptr = getUint32(cur.ptr + 4 * cur.ints[0].i);
-					cur.subcell = -1;
-					if (cell_size != 1) {
-						box_int_count++;
-						p0 = mix(P0, P1, vec3(cur.pos) / vec3(GRID_SIZE));
-						p1 = mix(P0, P1, vec3(cur.pos + cell_size) / vec3(GRID_SIZE));
-						vec3 r = 0.5*(p1 - p0), c = 0.5*(p0 + p1);
-						intersectOctreeNode(r, ro - c, 1.0 / rd, cur.ints);
-						if (!(cur.ints[0].i >= 0 && cur.ints[0].t.y > 0.0 && cur.ints[0].t.x < min_t)) cur.ptr = 0;
-						else cur.subcell = 0;
-					}
+					stk[++si] = cur, cell_size /= 2;
+					cur.subcell = 0;
+					int subcell = subcell_order[cur.subcell];
+					cur.ptr = getUint32(cur.ptr + 4 * subcell);
+					cur.pos += VERTEX_LIST[subcell] * cell_size;
 				}
 			}
 
@@ -326,38 +321,40 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 			else if (si != -1) {
 				cur = stk[si--]; cell_size *= 2;
 				cur.subcell += 1;
-				BoxIntersection intb = cur.ints[cur.subcell];
-				if (intb.i == -1 || intb.t.x > min_t) {
+				if (cur.subcell >= 8) {
 					cur.ptr = 0;
-					while (cur.ints[cur.subcell].i != -1) cur.ints[cur.subcell++].i = -1;
 				}
 				else {
-					stk[++si] = cur; cell_size /= 2;
-					cur.pos = cur.pos + VERTEX_LIST[intb.i] * cell_size;
-					cur.ptr = getUint32(cur.ptr + 4 * intb.i);
-					cur.subcell = -1;
+					stk[++si] = cur, cell_size /= 2;
+					int subcell = subcell_order[cur.subcell];
+					cur.pos = cur.pos + VERTEX_LIST[subcell] * cell_size;
+					cur.ptr = getUint32(cur.ptr + 4 * subcell);
+					cur.subcell = 0;
 				}
 			}
 
 			else break;
+#if IN_DISTANCE_ORDER
+			if (min_t < cur_t1) break;
+#endif
 		}
 	}
 
 	//col = vec3(loop_count, box_int_count, trig_int_count) / 255.0;
 	//col = vec3(box_int_count) / 255.0;
-	//col = vec3(1.0) * box_int_count / 255.0;
+	//col = vec3(1.0) * float(box_int_count) / 255.0;
 
 	return min_t < t1;
 }
 
-#if 1
-// fast visualization
+#if 0
+// fast preview
 vec3 mainRender(vec3 ro, vec3 rd) {
 	float t;
 	vec3 n, col = vec3(0.0);
 	if (intersectObject(ro, rd, t, 1e6, n, col)) {
 		return col;
-		//return col * abs(dot(normalize(n), rd));
+		return col * abs(dot(normalize(n), rd));
 	}
 	return col;
 }
@@ -415,8 +412,6 @@ vec3 mainRender(vec3 ro, vec3 rd) {
 #endif
 
 void mainImage(vec4 &fragColor, vec2 fragCoord) {
-	//fragCoord = vec2(222.5, 81.5);
-	const float SCALE = 1.0f;  // larger = smaller (more view field)
 	const vec3 CENTER = vec3(0, 0, 0);
 	const float DIST = 20.0f;  // larger = smaller
 	const float VIEW_FIELD = 0.4f;  // larger = larger + more perspective
@@ -426,8 +421,8 @@ void mainImage(vec4 &fragColor, vec2 fragCoord) {
 	vec3 u = vec3(-sin(iRz), cos(iRz), 0);
 	vec3 v = cross(w, u);
 	vec3 ro = DIST * w + CENTER;
-	vec2 uv = iSc * SCALE * (2.0f*(fragCoord.xy() - 0.5f) / iResolution.xy() - 1.0f);
-	vec2 sc = iResolution.xy() / length(iResolution.xy());
+	vec2 uv = iSc * (2.0f*(fragCoord.xy() - 0.5f) / iResolution.xy() - 1.0f);
+	vec2 sc = iResolution.xy() / min(iResolution.x, iResolution.y);
 	vec3 rd = mat3(u, v, -w)*vec3(VIEW_FIELD*uv*sc, 1.0f);
 	rd = normalize(rd);
 
@@ -566,10 +561,15 @@ void exportTree() {
 	);
 	printf("Tree sampler: %.2f MB\n", GLSL::treeSampler.size() / exp2(20));
 
-#if 1
 	FILE* fp = fopen("D:\\.bin", "wb");
 	fwrite(&GLSL::treeSampler[0], 1, GLSL::treeSampler.size(), fp);
 	fclose(fp);
+}
+
+void Init(char* argv[]) {
+#if 1
+	//exportModel(argv[1]);
+	exportTree();
 #else
 	FILE* fp = fopen("D:\\.bin", "r");
 	fseek(fp, 0, SEEK_END);
@@ -579,11 +579,6 @@ void exportTree() {
 	fread(&GLSL::treeSampler[0], 1, size, fp);
 	fclose(fp);
 #endif
-}
-
-void Init(char* argv[]) {
-	//exportModel(argv[1]);
-	exportTree();
 }
 
 void WindowResize(int _oldW, int _oldH, int _W, int _H) {

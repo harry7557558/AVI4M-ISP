@@ -1,41 +1,45 @@
 "use strict";
 
 
-var viewport = {
-    iRz: 0.9,
-    iRx: 0.2,
-    iSc: 1.3,
-    renderNeeded: true
-};
-
-var texture = {
-    id: -1,
-    object: {},
-    texture: null,
-    dims: [1, 1, 1],
-    bbox: [0, 0, 0]
-};
-
-var requestCache = {};
-
+// request shader source
 function loadShaderSource(path) {
     var source = "";
-    if (requestCache[path] != undefined) {
-        source = requestCache[path];
-    }
-    else {
-        var request = new XMLHttpRequest();
-        request.open("GET", path, false);
-        request.send(null);
-        if (request.status == 200) {
-            source = request.responseText;
-            requestCache[path] = source;
-        }
+    var request = new XMLHttpRequest();
+    request.responseType = "";
+    request.open("GET", path, false);
+    request.send(null);
+    if (request.status == 200) {
+        source = request.responseText;
     }
     return source;
 }
 
-function loadTexture(gl, url) {
+// compile shader
+function initShaderProgram(gl, vsSource, fsSource) {
+    function loadShader(gl, type, source) {
+        var shader = gl.createShader(type); // create a new shader
+        gl.shaderSource(shader, source); // send the source code to the shader
+        gl.compileShader(shader); // compile shader
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) // check if compiled succeed
+            throw new Error(gl.getShaderInfoLog(shader)); // compile error message
+        return shader;
+    }
+    var vShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+    var fShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+    // create the shader program
+    var shaderProgram = gl.createProgram();
+    gl.attachShader(shaderProgram, vShader);
+    gl.attachShader(shaderProgram, fShader);
+    gl.linkProgram(shaderProgram);
+    // if creating shader program failed
+    if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS))
+        throw new Error(gl.getProgramInfoLog(shaderProgram));
+    return shaderProgram;
+}
+
+// load tree data structure for an object
+function loadTreeTexture(renderer, url, texture_name) {
+    const gl = renderer.gl;
 
     function onload(treeBuffer) {
         const tex = gl.createTexture();
@@ -48,7 +52,7 @@ function loadTexture(gl, url) {
 
         console.log(treeBufferPadded.length);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8UI,
-            1024, 1024, 0,
+            BUFFER_SIZE, BUFFER_SIZE, 0,
             gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
             treeBufferPadded);
 
@@ -57,123 +61,42 @@ function loadTexture(gl, url) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_BASE_LEVEL, 0);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
 
-        texture.texture = tex;
-
-        viewport.renderNeeded = true;
-    }
-
-    function onerror() {
-        document.getElementById("volume-dims").innerHTML
-            = "<span style='color:red;'>Failed to load volume.</span>";
-        document.getElementById("volume-select").disabled = false;
-    }
-
-    if (requestCache[url] != undefined) {
-        onload(requestCache[url]);
-        return;
+        renderer.textures[texture_name] = tex;
+        renderer.uniforms.iFrame = 0;
+        renderer.renderNeeded = true;
     }
 
     var req = new XMLHttpRequest();
     req.open("GET", url, true);
     req.responseType = "arraybuffer";
-
+    req.onerror = function (e) {
+        alert("Failed to load texture " + texture_name);
+    };
     req.onload = function (e) {
         if (req.status == 200) {
             var treeBuffer = new Uint8Array(req.response);
-            requestCache[url] = treeBuffer;
             onload(treeBuffer);
         }
         else {
-            onerror();
+            req.onerror();
         }
-    };
-    req.onerror = function (e) {
-        onerror();
     };
     req.send();
 }
 
 
-// initialize WebGL: load and compile shader, initialize buffers
-function initWebGL(gl) {
-
-    console.time("request glsl code");
-    var vsSource = `#version 300 es
-        precision highp float;
-
-        in vec4 vertexPosition;
-
-        void main(void) {
-            gl_Position = vertexPosition;
-            return;
-        }
-    `;
-    var fsSource = loadShaderSource("frag.glsl");
-    console.timeEnd("request glsl code");
-
-    // compile shaders
-    function initShaderProgram(gl, vsSource, fsSource) {
-        function loadShader(gl, type, source) {
-            var shader = gl.createShader(type); // create a new shader
-            gl.shaderSource(shader, source); // send the source code to the shader
-            gl.compileShader(shader); // compile shader
-            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) // check if compiled succeed
-                throw new Error(gl.getShaderInfoLog(shader)); // compile error message
-            return shader;
-        }
-        var vShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
-        var fShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
-        // create the shader program
-        var shaderProgram = gl.createProgram();
-        gl.attachShader(shaderProgram, vShader);
-        gl.attachShader(shaderProgram, fShader);
-        gl.linkProgram(shaderProgram);
-        // if creating shader program failed
-        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS))
-            throw new Error(gl.getProgramInfoLog(shaderProgram));
-        return shaderProgram;
-    }
-    console.time("compile shader");
-    var shaderProgram = initShaderProgram(gl, vsSource, fsSource);
-    console.timeEnd("compile shader");
-
-    // position buffer
-    var positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    var positions = [-1, 1, 1, 1, -1, -1, 1, -1];
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
-    // return a JSON object
-    var programInfo = {
-        program: shaderProgram,
-        attribLocations: { // attribute variables, receive values from buffers
-            vertexPosition: gl.getAttribLocation(shaderProgram, 'vertexPosition'),
-        },
-        uniformLocations: { // uniform variables
-            iRz: gl.getUniformLocation(shaderProgram, 'iRz'),
-            iRx: gl.getUniformLocation(shaderProgram, 'iRx'),
-            iSc: gl.getUniformLocation(shaderProgram, 'iSc'),
-            iResolution: gl.getUniformLocation(shaderProgram, "iResolution"),
-            uTreeBuffer: gl.getUniformLocation(shaderProgram, "uTreeBuffer"),
-        },
-        buffers: {
-            positionBuffer: positionBuffer,
-        },
-    };
-    return programInfo;
-}
-
-
 // call this function to re-render
-function drawScene(gl, programInfo) {
+function drawScene(renderer) {
+    let gl = renderer.gl;
+    let programs = renderer.programs;
+    let uniforms = renderer.uniforms;
+    let buffers = renderer.buffers;
+    let textures = renderer.textures;
 
     // clear the canvas
-    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.viewport(0, 0, uniforms.iResolution.x, uniforms.iResolution.y);
     gl.clearColor(0, 0, 0, 1);
-    gl.clearDepth(-1.0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.GEQUAL);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     // tell WebGL how to pull out the positions from the position buffer into the vertexPosition attribute
     {
@@ -182,29 +105,32 @@ function drawScene(gl, programInfo) {
         const normalize = false; // don't normalize
         const stride = 0; // how many bytes to get from one set of values to the next
         const offset = 0; // how many bytes inside the buffer to start from
-        gl.bindBuffer(gl.ARRAY_BUFFER, programInfo.buffers.positionBuffer);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.positionBuffer);
+        var vertexPosition = gl.getAttribLocation(programs.renderProgram, 'vertexPosition');
         gl.vertexAttribPointer(
-            programInfo.attribLocations.vertexPosition,
+            vertexPosition,
             numComponents, type, normalize, stride, offset);
-        gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
+        gl.enableVertexAttribArray(vertexPosition);
     }
 
-    // indice buffer
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, programInfo.buffers.indiceBuffer);
-
-    // make sure it uses the program
-    gl.useProgram(programInfo.program);
+    // use the renderer program
+    gl.useProgram(programs.renderProgram);
 
     // set shader uniforms
-    // https://webglfundamentals.org/webgl/lessons/webgl-shaders-and-glsl.html
-    gl.uniform1f(programInfo.uniformLocations.iRz, viewport.iRz + 1e-4);
-    gl.uniform1f(programInfo.uniformLocations.iRx, viewport.iRx + 1e-4);
-    gl.uniform1f(programInfo.uniformLocations.iSc, viewport.iSc);
-    gl.uniform2f(programInfo.uniformLocations.iResolution, canvas.clientWidth, canvas.clientHeight);
+    gl.uniform1f(gl.getUniformLocation(programs.renderProgram, "iRz"), uniforms.iRz);
+    gl.uniform1f(gl.getUniformLocation(programs.renderProgram, "iRx"), uniforms.iRx);
+    gl.uniform1f(gl.getUniformLocation(programs.renderProgram, "iSc"), uniforms.iSc);
+    gl.uniform2f(
+        gl.getUniformLocation(programs.renderProgram, "iResolution"),
+        uniforms.iResolution.x, uniforms.iResolution.y);
+    gl.uniform1i(
+        gl.getUniformLocation(programs.renderProgram, "iFrame"),
+        uniforms.iFrame++);
 
+    // set texture
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture.texture);
-    gl.uniform1i(programInfo.uniformLocations.uTreeBuffer, 0);
+    gl.bindTexture(gl.TEXTURE_2D, textures.treeSampler);
+    gl.uniform1i(gl.getUniformLocation(programs.renderProgram, "uTreeBuffer"), 0);
 
     // render
     {
@@ -216,44 +142,104 @@ function drawScene(gl, programInfo) {
 
 
 function main() {
+
+    // get WebGL context
     const canvas = document.getElementById("canvas");
     const gl = canvas.getContext("webgl2") || canvas.getContext("experimental-webgl2");
-    if (gl == null) throw ("Error: `canvas.getContext(\"webgl2\")` returns null. Your browser may not support WebGL 2.");
+    if (gl == null) throw ("Failed to load WebGL2");
 
-    // load WebGL
-    var programInfo = initWebGL(gl);
-    loadTexture(gl, "tree1.bin");
+    var renderer = {
+        canvas: canvas,
+        gl: gl,
+        extentions: {},
+        programs: {
+            renderProgram: null
+        },
+        uniforms: {
+            iRz: 0.9 + 1e-4,
+            iRx: 0.2 + 1e-4,
+            iSc: 1.0,
+            iResolution: { x: 1, y: 1 },
+            iFrame: 0
+        },
+        buffers: {
+            positionBuffer: null
+        },
+        textures: {
+            treeSampler: null
+        },
+        statistics: {
+            renderTime: null
+        },
+        renderNeeded: true
+    };
+    renderer.extentions["EXT_disjoint_timer_query_webgl2"] = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+    renderer.uniforms.iResolution.x = canvas.width = canvas.style.width = window.innerWidth;
+    renderer.uniforms.iResolution.y = canvas.height = canvas.style.height = window.innerHeight;
+
+    // load object - do this early because it takes time
+    loadTreeTexture(renderer, "tree8.bin", "treeSampler");
+
+    // load shaders
+    console.time("request glsl code");
+    var vsSource = `#version 300 es
+        precision highp float;
+        in vec4 vertexPosition;
+        void main(void) {
+            gl_Position = vertexPosition;
+            return;
+        }
+    `;
+    var fsSource = loadShaderSource("frag.glsl");
+    console.timeEnd("request glsl code");
+
+    // compile shaders
+    console.time("compile shader");
+    renderer.programs.renderProgram = initShaderProgram(gl, vsSource, fsSource);
+    console.timeEnd("compile shader");
+
+    // position buffer
+    var positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    var positions = [-1, 1, 1, 1, -1, -1, 1, -1];
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+    renderer.buffers.positionBuffer = positionBuffer;
 
     // rendering
     let then = 0;
     function render_main(now) {
-        if (viewport.renderNeeded) {
+        if (renderer.renderNeeded) {
             // display fps
-            now *= 0.001;
-            var time_delta = now - then;
-            then = now;
-            if (time_delta != 0) {
-                document.getElementById("fps").textContent = (1.0 / time_delta).toFixed(1) + " fps";
-            }
-
-            canvas.width = canvas.style.width = window.innerWidth;
-            canvas.height = canvas.style.height = window.innerHeight;
-            drawScene(gl, programInfo);
-
-            viewport.renderNeeded = false;
+            var time_elapsed = 0.001 * (now - then);
+            var old_time = renderer.statistics.renderTime;
+            if (old_time == null) old_time = time_elapsed;
+            var blend = Math.max(0.1, 1.0 - Math.exp(-10.0 * time_elapsed));
+            var new_time = old_time + (time_elapsed - old_time) * blend;
+            document.getElementById("fps").innerHTML =
+                renderer.uniforms.iResolution.x + " × " + renderer.uniforms.iResolution.y + "<br/>" +
+                (1000.0 * new_time).toFixed(0) + " ms, " + (1.0 / new_time).toFixed(1) + " fps";
+            renderer.statistics.renderTime = new_time;
+            drawScene(renderer);
+            renderer.renderNeeded = false;
+        }
+        then = now;
+        if (renderer.textures.treeSampler == null) {
+            document.getElementById("fps").innerHTML = "Loading model..."
         }
         requestAnimationFrame(render_main);
     }
     requestAnimationFrame(render_main);
 
     // interactions
+    var mouseDown = false;
     canvas.addEventListener("wheel", function (e) {
         e.preventDefault();
         var sc = Math.exp(-0.0005 * e.wheelDeltaY);
-        viewport.iSc *= sc;
-        viewport.renderNeeded = true;
+        if (true) {
+            renderer.uniforms.iSc *= sc;
+            renderer.renderNeeded = true;
+        }
     }, { passive: false });
-    var mouseDown = false;
     canvas.addEventListener("pointerdown", function (event) {
         //event.preventDefault();
         mouseDown = true;
@@ -263,15 +249,15 @@ function main() {
         mouseDown = false;
     });
     window.addEventListener("resize", function (event) {
-        canvas.width = canvas.style.width = window.innerWidth;
-        canvas.height = canvas.style.height = window.innerHeight;
-        viewport.renderNeeded = true;
+        renderer.uniforms.iResolution.x = canvas.width = canvas.style.width = window.innerWidth;
+        renderer.uniforms.iResolution.y = canvas.height = canvas.style.height = window.innerHeight;
+        renderer.renderNeeded = true;
     });
     canvas.addEventListener("pointermove", function (e) {
         if (mouseDown) {
-            viewport.iRx += 0.01 * e.movementY;
-            viewport.iRz -= 0.01 * e.movementX;
-            viewport.renderNeeded = true;
+            renderer.uniforms.iRx += 0.01 * e.movementY;
+            renderer.uniforms.iRz -= 0.01 * e.movementX;
+            renderer.renderNeeded = true;
         }
     });
 }
