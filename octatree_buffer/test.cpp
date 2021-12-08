@@ -122,7 +122,7 @@ vec4 *FrameBuffer = nullptr;
 #define P0 vec3(-2.0, -2.0, -2.0) /* min coordinates of grid */
 #define P1 vec3(2.0, 2.0, 2.0) /* max coordinates of grid */
 #define GRID_DIF ivec3(1) /* initial grid size, at least one odd component */
-#define PLOT_DEPTH 8 /* depth of the tree */
+#define PLOT_DEPTH 6 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
@@ -133,7 +133,8 @@ vec4 *FrameBuffer = nullptr;
 
 
 #if 0
-#include "test-models/nautilus_shell.h"
+//#include "test-models/nautilus_shell.h"
+#include "../.glsl.cpp"
 #else
 vec4 map(vec3 p, bool col_required) {
 	float d = length(p) - 1.0 + 0.2*sin(10.0*p.x)*sin(10.0*p.y)*sin(10.0*p.z);
@@ -199,6 +200,7 @@ float intersectTriangle(vec3 ro, vec3 rd, vec3 v01, vec3 v02) {
 	return t;
 }
 
+
 // faster in CPU, similar speed in Chrome, slower in Firefox
 #define IN_DISTANCE_ORDER 1
 
@@ -215,7 +217,8 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	min_t = t1;
 
 	// bounding box
-	vec2 ib = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), 1.0 / rd);
+	vec3 inv_rd = 1.0 / rd;
+	vec2 ib = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), inv_rd);
 	if (ib.y <= 0.0 || ib.x > t1) return false;
 
 	// calculate the order to traverse subcells
@@ -238,8 +241,6 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 		subcell_order[j + 1] = soi;
 	}
 #endif
-
-	vec3 inv_rd = 1.0 / rd;
 
 	// debug
 	int loop_count = 0;
@@ -268,7 +269,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 			// test if current node is none
 			if (cur.ptr != 0) {
 				box_int_count++;
-				vec3 c = mix(P0, P1, (vec3(cur.pos) + 0.5*float(cell_size)) / vec3(GRID_SIZE));
+				vec3 c = mix(P0, P1, (vec3(cur.pos) + 0.5 * float(cell_size)) / vec3(GRID_SIZE));
 				vec3 r = (P1 - P0) / vec3(GRID_SIZE) * 0.5 * float(cell_size);
 				ib = intersectBox(r, ro - c, inv_rd);
 				if (!(ib.y > 0.0 && ib.x < min_t)) cur.ptr = 0;
@@ -282,16 +283,6 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					ivec3 po = cur.pos * EDGE_ROUNDING;
 					for (int ti = 0; ti < n; ti++) {
 						trig_int_count++;
-#if 0
-						vec3 a = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 1)) / vec3(MESH_SIZE));
-						vec3 b = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 4)) / vec3(MESH_SIZE));
-						vec3 c = mix(P0, P1, vec3(po + getUvec3(cur.ptr + 12 * ti + 7)) / vec3(MESH_SIZE));
-						t = intersectTriangle(ro - a, rd, b - a, c - a);
-						if (t > 0.0 && t < min_t) {
-							min_t = t, min_n = cross(b - a, c - a);
-							col = vec3(getUvec3(cur.ptr + 12 * ti + 10)) / 255.0;
-						}
-#else
 						ivec3 vi0 = getUvec3(cur.ptr + 12 * ti + 1);
 						ivec3 vi1 = getUvec3(cur.ptr + 12 * ti + 4);
 						ivec3 vi2 = getUvec3(cur.ptr + 12 * ti + 7);
@@ -303,13 +294,12 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 							min_t = t, min_n = cross(v01, v02);
 							col = vec3(getUvec3(cur.ptr + 12 * ti + 10)) / 255.0;
 						}
-#endif
 					}
 					cur.ptr = 0;
 				}
 				// subtree
 				else {
-					stk[++si] = cur, cell_size /= 2;
+					stk[++si] = cur; cell_size /= 2;
 					cur.subcell = 0;
 					int subcell = subcell_order[cur.subcell];
 					cur.ptr = getUint32(cur.ptr + 4 * subcell);
@@ -325,7 +315,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					cur.ptr = 0;
 				}
 				else {
-					stk[++si] = cur, cell_size /= 2;
+					stk[++si] = cur; cell_size /= 2;
 					int subcell = subcell_order[cur.subcell];
 					cur.pos = cur.pos + VERTEX_LIST[subcell] * cell_size;
 					cur.ptr = getUint32(cur.ptr + 4 * subcell);
@@ -347,13 +337,15 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	return min_t < t1;
 }
 
-#if 0
+
+
+#if 1
 // fast preview
 vec3 mainRender(vec3 ro, vec3 rd) {
 	float t;
 	vec3 n, col = vec3(0.0);
 	if (intersectObject(ro, rd, t, 1e6, n, col)) {
-		return col;
+		//return col;
 		return col * abs(dot(normalize(n), rd));
 	}
 	return col;
