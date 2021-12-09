@@ -11,6 +11,15 @@ function loadShaderSource(path) {
     if (request.status == 200) {
         source = request.responseText;
     }
+    else {
+        throw ("Error loading shader source (" + request.status + "): " + path);
+    }
+    const include_regex = /\n\#include\s+[\<\"](.*?)[\>\"]/;
+    while (include_regex.test(source)) {
+        var match = source.match(include_regex);
+        var include_source = loadShaderSource(match[1]);
+        source = source.replace(match[0], "\n" + include_source + "\n");
+    }
     return source;
 }
 
@@ -21,7 +30,7 @@ function initShaderProgram(gl, vsSource, fsSource) {
         gl.shaderSource(shader, source); // send the source code to the shader
         gl.compileShader(shader); // compile shader
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) // check if compiled succeed
-            throw new Error(gl.getShaderInfoLog(shader)); // compile error message
+            throw "Shader compile error:<br/>" + gl.getShaderInfoLog(shader); // compile error message
         return shader;
     }
     var vShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
@@ -224,7 +233,7 @@ function main() {
                 renderer.uniforms.iResolution.x + " × " + renderer.uniforms.iResolution.y + "<br/>" +
                 (1000.0 / avrfps).toFixed(0) + " ms, " + avrfps.toFixed(1) + " fps";
             drawScene(renderer);
-            renderer.renderNeeded = false;
+            //renderer.renderNeeded = false;
         }
         then = now;
         if (renderer.textures.treeSampler == null) {

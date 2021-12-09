@@ -1,6 +1,8 @@
 // test octatree.h + sample rendering
 
-#define _MULTITHREADING 1
+#pragma once
+
+#define _MULTITHREADING 0
 
 #pragma warning(disable: 4244)
 #pragma warning(disable: 4305)
@@ -109,8 +111,8 @@ int main(int argc, char* argv[]) {
 
 NAMESPACE_GLSL_BEGIN
 
-float iRx = 0.3;
-float iRz = 0.5;
+float iRx = 0.3 + 1e-4;
+float iRz = 0.5 + 1e-4;
 float iSc = 0.5;
 vec3 iResolution = vec3(0, 0, 1);
 vec4 iMouse = vec4(0, 0, 0, 0);
@@ -127,7 +129,7 @@ vec4 *FrameBuffer = nullptr;
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
 
-#define GRID_EXPAND 2 /* pre-sample this number of layers in tree */
+#define GRID_EXPAND 1 /* pre-sample this number of layers in tree */
 #define SEARCH_DIF_EXP (GRID_DIF*(1<<GRID_EXPAND))
 #define PLOT_DEPTH_EXP (PLOT_DEPTH-GRID_EXPAND)
 
@@ -173,170 +175,7 @@ ivec3 getUvec3(int i) {
 }
 
 
-const ivec3 VERTEX_LIST[8] = {
-	ivec3(0,0,0), ivec3(0,1,0), ivec3(1,1,0), ivec3(1,0,0),
-	ivec3(0,0,1), ivec3(0,1,1), ivec3(1,1,1), ivec3(1,0,1)
-};
-
-vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
-	vec3 p = -inv_rd * ro;
-	vec3 k = abs(inv_rd)*r;
-	vec3 t1 = p - k, t2 = p + k;
-	float tN = max(max(t1.x, t1.y), t1.z);
-	float tF = min(min(t2.x, t2.y), t2.z);
-	if (tN >= tF || tF < 0.0) return vec2(-1.0);
-	return vec2(tN, tF);
-}
-
-float intersectTriangle(vec3 ro, vec3 rd, vec3 v01, vec3 v02) {
-	vec3 n = cross(v01, v02);
-	vec3 q = cross(ro, rd);
-	float d = 1.0 / dot(rd, n);
-	float u = -d * dot(q, v02);
-	if (u < 0.0 || u > 1.0) return -1.0;
-	float v = d * dot(q, v01);
-	if (v < 0.0 || u + v > 1.0) return -1.0;
-	float t = -d * dot(n, ro);
-	return t;
-}
-
-
-// faster in CPU, similar speed in Chrome, slower in Firefox
-#define IN_DISTANCE_ORDER 1
-
-// used for tree traversal
-struct TreeNode {
-	ivec3 pos;  // position of origin of the cell
-	int subcell;  // ID of subcell during traversal
-	int ptr;  // position in the buffer
-};
-
-// ray-object intersection, grid/tree lookup
-bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3 &col) {
-	float t;
-	min_t = t1;
-
-	// bounding box
-	vec3 inv_rd = 1.0 / rd;
-	vec2 ib = intersectBox(0.5*(P1 - P0), ro - 0.5*(P0 + P1), inv_rd);
-	if (ib.y <= 0.0 || ib.x > t1) return false;
-
-	// calculate the order to traverse subcells
-	int subcell_order[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
-#if IN_DISTANCE_ORDER
-	float dist[8];
-	for (int i = 0; i < 8; i++) {
-		dist[i] = dot(vec3(VERTEX_LIST[i]), rd);
-	}
-	for (int i = 1; i < 8; i++) {  // sorting
-		int soi = subcell_order[i];
-		float di = dist[i];
-		int j = i - 1;
-		while (j >= 0 && dist[j] > di) {
-			dist[j + 1] = dist[j];
-			subcell_order[j + 1] = subcell_order[j];
-			j--;
-		}
-		dist[j + 1] = di;
-		subcell_order[j + 1] = soi;
-	}
-#endif
-
-	// debug
-	int loop_count = 0;
-	int trig_int_count = 0;
-	int box_int_count = 0;
-
-	// grid
-	for (int xi = ZERO; xi < GRID_DIF.x; xi++) for (int yi = ZERO; yi < GRID_DIF.y; yi++) for (int zi = ZERO; zi < GRID_DIF.z; zi++) {
-		int grid_pos = getUint32(4 * ((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
-		if (grid_pos == 0) continue;
-		float cur_t1 = min_t;
-
-		// tree traversal
-		TreeNode stk[PLOT_DEPTH];  // stack
-		int si = -1;  // index of the top of the stack
-		int cell_size = 1 << PLOT_DEPTH;
-		TreeNode cur;  // current node
-		cur.pos = ivec3(xi, yi, zi)*cell_size;
-		cur.subcell = 0;
-		cur.ptr = grid_pos;
-		vec3 p0, p1;
-
-		while (true) {
-			loop_count++;
-
-			// test if current node is none
-			if (cur.ptr != 0) {
-				box_int_count++;
-				vec3 c = mix(P0, P1, (vec3(cur.pos) + 0.5 * float(cell_size)) / vec3(GRID_SIZE));
-				vec3 r = (P1 - P0) / vec3(GRID_SIZE) * 0.5 * float(cell_size);
-				ib = intersectBox(r, ro - c, inv_rd);
-				if (!(ib.y > 0.0 && ib.x < min_t)) cur.ptr = 0;
-			}
-
-			// go into subtree
-			if (cur.ptr != 0) {
-				// triangles
-				if (cell_size == 1) {
-					int n = getUint8(cur.ptr);
-					ivec3 po = cur.pos * EDGE_ROUNDING;
-					for (int ti = 0; ti < n; ti++) {
-						trig_int_count++;
-						ivec3 vi0 = getUvec3(cur.ptr + 12 * ti + 1);
-						ivec3 vi1 = getUvec3(cur.ptr + 12 * ti + 4);
-						ivec3 vi2 = getUvec3(cur.ptr + 12 * ti + 7);
-						vec3 v0 = mix(P0, P1, vec3(po + vi0) / vec3(MESH_SIZE));
-						vec3 v01 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi1 - vi0);
-						vec3 v02 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi2 - vi0);
-						t = intersectTriangle(ro - v0, rd, v01, v02);
-						if (t > 0.0 && t < min_t) {
-							min_t = t, min_n = cross(v01, v02);
-							col = vec3(getUvec3(cur.ptr + 12 * ti + 10)) / 255.0;
-						}
-					}
-					cur.ptr = 0;
-				}
-				// subtree
-				else {
-					stk[++si] = cur; cell_size /= 2;
-					cur.subcell = 0;
-					int subcell = subcell_order[cur.subcell];
-					cur.ptr = getUint32(cur.ptr + 4 * subcell);
-					cur.pos += VERTEX_LIST[subcell] * cell_size;
-				}
-			}
-
-			// next node
-			else if (si != -1) {
-				cur = stk[si--]; cell_size *= 2;
-				cur.subcell += 1;
-				if (cur.subcell >= 8) {
-					cur.ptr = 0;
-				}
-				else {
-					stk[++si] = cur; cell_size /= 2;
-					int subcell = subcell_order[cur.subcell];
-					cur.pos = cur.pos + VERTEX_LIST[subcell] * cell_size;
-					cur.ptr = getUint32(cur.ptr + 4 * subcell);
-					cur.subcell = 0;
-				}
-			}
-
-			else break;
-#if IN_DISTANCE_ORDER
-			if (min_t < cur_t1) break;
-#endif
-		}
-	}
-
-	//col = vec3(loop_count, box_int_count, trig_int_count) / 255.0;
-	//col = vec3(box_int_count) / 255.0;
-	//col = vec3(1.0) * float(box_int_count) / 255.0;
-
-	return min_t < t1;
-}
-
+#include "intersector_2.h"
 
 
 #if 1
@@ -345,7 +184,7 @@ vec3 mainRender(vec3 ro, vec3 rd) {
 	float t;
 	vec3 n, col = vec3(0.0);
 	if (intersectObject(ro, rd, t, 1e6, n, col)) {
-		//return col;
+		return col;
 		return col * abs(dot(normalize(n), rd));
 	}
 	return col;
@@ -404,6 +243,7 @@ vec3 mainRender(vec3 ro, vec3 rd) {
 #endif
 
 void mainImage(vec4 &fragColor, vec2 fragCoord) {
+	//fragCoord = vec2(200.5, 234.5);
 	const vec3 CENTER = vec3(0, 0, 0);
 	const float DIST = 20.0f;  // larger = smaller
 	const float VIEW_FIELD = 0.4f;  // larger = larger + more perspective
@@ -491,7 +331,7 @@ void render() {
 	int n = _WIN_W * _WIN_H;
 	avrcol = avrcol / n;
 	varcol = sqrt((varcol - n * avrcol * avrcol) / (n - 1));
-	printf("mu=(%.3g,%.3g,%.3g), var=(%.3g,%.3g,%.3g), min=(%.3g,%.3g,%.3g), max=(%.3g,%.3g,%.3g)\n",
+	printf("mean=(%.3g,%.3g,%.3g), var=(%.3g,%.3g,%.3g), min=(%.3g,%.3g,%.3g), max=(%.3g,%.3g,%.3g)\n",
 		avrcol.x, avrcol.y, avrcol.z, varcol.x, varcol.y, varcol.z, mincol.x, mincol.y, mincol.z, maxcol.x, maxcol.y, maxcol.z);
 
 	// the actual fps is less because of display time
