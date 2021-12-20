@@ -96,10 +96,11 @@ int main(int argc, char* argv[]) {
 
 
 
+#include "../octatree/ply_writer.h"
+
 #include "octatree.h"
 
 #include "../octatree/trigs2mesh.h"
-#include "../octatree/ply_writer.h"
 
 
 #define NAMESPACE_GLSL_BEGIN namespace GLSL {
@@ -124,19 +125,19 @@ vec4 *FrameBuffer = nullptr;
 #define P0 vec3(-2.0, -2.0, -2.0) /* min coordinates of grid */
 #define P1 vec3(2.0, 2.0, 2.0) /* max coordinates of grid */
 #define GRID_DIF ivec3(1) /* initial grid size, at least one odd component */
-#define PLOT_DEPTH 6 /* depth of the tree */
+#define PLOT_DEPTH 9 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
 
-#define GRID_EXPAND 1 /* pre-sample this number of layers in tree */
+#define GRID_EXPAND 4 /* pre-sample this number of layers in tree */
 #define SEARCH_DIF_EXP (GRID_DIF*(1<<GRID_EXPAND))
 #define PLOT_DEPTH_EXP (PLOT_DEPTH-GRID_EXPAND)
 
 
-#if 0
-//#include "test-models/nautilus_shell.h"
-#include "../.glsl.cpp"
+#if 1
+#include "test-models/nautilus_shell.h"
+//#include "../.glsl.cpp"
 #else
 vec4 map(vec3 p, bool col_required) {
 	float d = length(p) - 1.0 + 0.2*sin(10.0*p.x)*sin(10.0*p.y)*sin(10.0*p.z);
@@ -400,8 +401,8 @@ void exportTree() {
 
 void Init(char* argv[]) {
 #if 1
-	//exportModel(argv[1]);
-	exportTree();
+	exportModel(argv[1]); exit(0);
+	//exportTree();
 #else
 	FILE* fp = fopen("D:\\.bin", "r");
 	fseek(fp, 0, SEEK_END);

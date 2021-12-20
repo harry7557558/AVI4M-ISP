@@ -75,13 +75,17 @@ const ivec2 EDGE_LIST[12] = {
 };
 
 // list of faces; opposite face: (+3)%6
-const int FACE_LIST[6][4] = {
-	{0, 1, 5, 4}, {0, 3, 7, 4}, {0, 1, 2, 3},
-	{2, 3, 7, 6}, {2, 1, 5, 6}, {4, 5, 6, 7}
+const int FACE_LIST[6][4] = {  // list vertices for each face
+	{0, 4, 5, 1}, {0, 3, 7, 4}, {0, 1, 2, 3}, // ccw
+	{3, 7, 6, 2}, {1, 2, 6, 5}, {4, 5, 6, 7}  // cw
 };
 const ivec3 FACE_DIR[6] = {
 	ivec3(-1,0,0), ivec3(0,-1,0), ivec3(0,0,-1),
 	ivec3(1,0,0), ivec3(0,1,0), ivec3(0,0,1)
+};
+const int FACE_EDGE_LIST[6][4] = {  // list edges for each face
+	{8, 4, 9, 0}, {3, 11, 7, 8}, {0, 1, 2, 3},
+	{11, 6, 10, 2}, {1, 10, 5, 9}, {4, 5, 6, 7}
 };
 
 // lookup tables for reconstruction
@@ -122,6 +126,32 @@ const int TRIG_TABLE[256][16] = {
 	{4,11,7,4,9,11,9,10,11,-1}, {0,8,3,4,9,7,9,11,7,9,10,11,-1}, {1,10,11,1,11,4,1,4,0,7,4,11,-1}, {3,1,4,3,4,8,1,10,4,7,4,11,10,11,4,-1}, {4,11,7,9,11,4,9,2,11,9,1,2,-1}, {9,7,4,9,11,7,9,1,11,2,11,1,0,8,3,-1}, {11,7,4,11,4,2,2,4,0,-1}, {11,7,4,11,4,2,8,3,4,3,2,4,-1}, {2,9,10,2,7,9,2,3,7,7,4,9,-1}, {9,10,7,9,7,4,10,2,7,8,7,0,2,0,7,-1}, {3,7,10,3,10,2,7,4,10,1,10,0,4,0,10,-1}, {1,10,2,8,7,4,-1}, {4,9,1,4,1,7,7,1,3,-1}, {4,9,1,4,1,7,0,8,1,8,7,1,-1}, {4,0,3,7,4,3,-1}, {4,8,7,-1},
 	{9,10,8,10,11,8,-1}, {3,0,9,3,9,11,11,9,10,-1}, {0,1,10,0,10,8,8,10,11,-1}, {3,1,10,11,3,10,-1}, {1,2,11,1,11,9,9,11,8,-1}, {3,0,9,3,9,11,1,2,9,2,11,9,-1}, {0,2,11,8,0,11,-1}, {3,2,11,-1}, {2,3,8,2,8,10,10,8,9,-1}, {9,10,2,0,9,2,-1}, {2,3,8,2,8,10,0,1,8,1,10,8,-1}, {1,10,2,-1}, {1,3,8,9,1,8,-1}, {0,9,1,-1}, {0,3,8,-1}, {-1}
 };
+
+// lookup table with disambiguation (generated instead of hard-coded)
+std::map<int, std::vector<std::vector<ivec3>>> DISAMBIGUATION_LUT[256];
+
+namespace DISAMBIGUATION {
+
+#include "disambiguation.cpp"
+
+	void initDisambiguationTable() {
+		initCubeCases();
+		for (int i = 0; i < 256; i++) {
+			if (!cubes[i].triangulationCases.empty()) {
+				for (TriangulationCase tc : cubes[i].triangulationCases) {
+					int amb = 0;
+					for (int b = 0; b < 6; b++) {
+						int id = tc.faceIndex[b];
+						amb = (amb << 1) | int(id >= 16);
+					}
+					DISAMBIGUATION_LUT[i][amb] = tc.triangulations;
+				}
+			}
+		}
+	}
+
+};
+
 
 // calculate index for table lookup
 static int CalcIndex(const float v[8]) {
@@ -173,8 +203,10 @@ ivec3 GRID_SIZE;  // SEARCH_DIF * PLOT_SIZE
 int EDGE_ROUNDING;  // subdivide an edge into this number of intervals and round coordinates to integer
 ivec3 MESH_SIZE;  // precision of mesh: (P1-P0)/MESH_SIZE
 void calcParams() {
-	if (PLOT_DEPTH <= 0)
-		throw "Plot depth should be a positive integer.";
+	if (PLOT_DEPTH < 0)
+		throw "Plot depth must be non-negavite.";
+	/*if (PLOT_DEPTH == 0)
+		throw "Plot depth should be a positive integer.";*/
 	PLOT_SIZE = 1 << PLOT_DEPTH;
 	GRID_SIZE = SEARCH_DIF * PLOT_SIZE;
 	MESH_SIZE = GRID_SIZE * EDGE_ROUNDING;
@@ -447,6 +479,7 @@ void octatree_main() {
 // export a discrete list of triangles
 void triangulate(std::vector<triangle_3d> &trigs) {
 	octatree_main();
+#if 0
 	for (int i = 0, cn = (int)cells.size(); i < cn; i++) {
 		vec3 p[8];
 		for (int j = 0; j < 8; j++) p[j] = i2f(cells[i]->p(j));
@@ -459,6 +492,24 @@ void triangulate(std::vector<triangle_3d> &trigs) {
 			trigs.push_back(triangle_3d(a, b, c));
 		}
 	}
+#else
+	DISAMBIGUATION::initDisambiguationTable();
+	for (int i = 0; i < (int)cells.size(); i++) {
+		vec3 p[8];
+		for (int j = 0; j < 8; j++) p[j] = i2f(cells[i]->p(j));
+		int index = CalcIndex(cells[i]->v);
+		if (DISAMBIGUATION_LUT[index].empty()) continue;
+		if (DISAMBIGUATION_LUT[index][0].empty()) { fprintf(stderr, "Empty (%d)\n", index); continue; }
+		auto lut = DISAMBIGUATION_LUT[index][0].begin();
+		for (int ti = 0; ti < (int)lut->size(); ti++) {
+			ivec3 t = lut->at(ti);
+			vec3 a = getInterpolation(p, cells[i]->v, t.x);
+			vec3 b = getInterpolation(p, cells[i]->v, t.y);
+			vec3 c = getInterpolation(p, cells[i]->v, t.z);
+			trigs.push_back(triangle_3d(a, b, c));
+		}
+	}
+#endif
 	destroy_octatree();
 }
 
