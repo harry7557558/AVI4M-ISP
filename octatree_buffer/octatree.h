@@ -6,11 +6,15 @@
 #include <functional>
 #include <algorithm>
 #include <map>
+#include <unordered_map>
 
 #include <chrono>
 #include <string>
 
 #include "../octatree/trigs2mesh.h"
+
+
+#define DISAMBIGUATION 1
 
 
 #define ScalarFieldTriangulator_octatree_BEGIN_ namespace ScalarFieldTriangulator_octatree {
@@ -88,7 +92,39 @@ const int FACE_EDGE_LIST[6][4] = {  // list edges for each face
 	{11, 6, 10, 2}, {1, 10, 5, 9}, {4, 5, 6, 7}
 };
 
-// lookup tables for reconstruction
+// face elements
+const ivec2 VERTICE_LIST_FACE[4] = {
+	ivec2(0,0), ivec2(1,0), ivec2(1,1), ivec2(0,1)
+};
+const int VERTICE_LIST_FACE_INV[2][2] = {
+	{0, 3}, {1, 2}
+};
+const ivec2 EDGE_LIST_FACE[4] = {
+	ivec2(0,1), ivec2(1,2), ivec2(2,3), ivec2(3,0)
+};
+const int LUT_FACE[18][4] = {  // left is negative (1)
+	{ -1, }, // 0000
+	{ 0, 3, -1 }, // 1000
+	{ 1, 0, -1 }, // 0100
+	{ 1, 3, -1 }, // 1100
+	{ 2, 1, -1 }, // 0010
+	{ 0, 3, 2, 1 }, // 1010, #5
+	{ 2, 0, -1 }, // 0110
+	{ 2, 3, -1 }, // 1110
+	{ 3, 2, -1 }, // 0001
+	{ 0, 2, -1 }, // 1001
+	{ 1, 0, 3, 2 }, // 0101, #10
+	{ 1, 2, -1 }, // 1101
+	{ 3, 1, -1 }, // 0011
+	{ 0, 1, -1 }, // 1011
+	{ 3, 0, -1 }, // 0111
+	{ -1 }, // 1111
+	{ 0, 1, 2, 3 }, // 1010 alternate, #16
+	{ 1, 2, 3, 0 }, // 0101 alternate, #17
+};
+
+
+// static lookup tables for reconstruction
 // http://paulbourke.net/geometry/polygonise/
 const int EDGE_TABLE[256] = {
 	0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c, 0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
@@ -127,23 +163,32 @@ const int TRIG_TABLE[256][16] = {
 	{9,10,8,10,11,8,-1}, {3,0,9,3,9,11,11,9,10,-1}, {0,1,10,0,10,8,8,10,11,-1}, {3,1,10,11,3,10,-1}, {1,2,11,1,11,9,9,11,8,-1}, {3,0,9,3,9,11,1,2,9,2,11,9,-1}, {0,2,11,8,0,11,-1}, {3,2,11,-1}, {2,3,8,2,8,10,10,8,9,-1}, {9,10,2,0,9,2,-1}, {2,3,8,2,8,10,0,1,8,1,10,8,-1}, {1,10,2,-1}, {1,3,8,9,1,8,-1}, {0,9,1,-1}, {0,3,8,-1}, {-1}
 };
 
+
+#if DISAMBIGUATION
+
 // lookup table with disambiguation (generated instead of hard-coded)
 std::map<int, std::vector<std::vector<ivec3>>> DISAMBIGUATION_LUT[256];
 
-namespace DISAMBIGUATION {
+namespace Disambiguation {
 
 #include "disambiguation.cpp"
+
+	template<typename Int>
+	int calcDisambiguationFaceIndex(const Int faceIndex[6]) {
+		int amb = 0;
+		for (int b = 0; b < 6; b++) {
+			int id = (int)faceIndex[b];
+			amb = (amb << 1) | int(id >= 16);
+		}
+		return amb;
+	}
 
 	void initDisambiguationTable() {
 		initCubeCases();
 		for (int i = 0; i < 256; i++) {
 			if (!cubes[i].triangulationCases.empty()) {
 				for (TriangulationCase tc : cubes[i].triangulationCases) {
-					int amb = 0;
-					for (int b = 0; b < 6; b++) {
-						int id = tc.faceIndex[b];
-						amb = (amb << 1) | int(id >= 16);
-					}
+					int amb = calcDisambiguationFaceIndex(&tc.faceIndex[0]);
 					DISAMBIGUATION_LUT[i][amb] = tc.triangulations;
 				}
 			}
@@ -152,10 +197,13 @@ namespace DISAMBIGUATION {
 
 };
 
+#endif
+
 
 // calculate index for table lookup
-static int CalcIndex(const float v[8]) {
-	if (isnan(v[0] + v[1] + v[2] + v[3] + v[4] + v[5] + v[6] + v[7])) return 0;
+int calcIndex(const float v[8]) {
+	if (isnan(v[0] + v[1] + v[2] + v[3] + v[4] + v[5] + v[6] + v[7]))
+		return 0;
 	return int(v[0] < 0) |
 		(int(v[1] < 0) << 1) |
 		(int(v[2] < 0) << 2) |
@@ -165,9 +213,41 @@ static int CalcIndex(const float v[8]) {
 		(int(v[6] < 0) << 6) |
 		(int(v[7] < 0) << 7);
 }
+int calcIndex(const std::initializer_list<float> c) {
+	return calcIndex(&*c.begin());
+}
+void toIndex(const int index, float v[8]) {
+	for (int i = 0; i < 8; i++)
+		v[i] = (index >> i) & 1 ? -1.0f : 1.0f;
+}
+int calcFaceIndex(const float v[4]) {
+	if (isnan(v[0] + v[1] + v[2] + v[3]))
+		return 0;
+	return int(v[0] < 0) |
+		(int(v[1] < 0) << 1) |
+		(int(v[2] < 0) << 2) |
+		(int(v[3] < 0) << 3);
+}
+int calcFaceIndexBilinear(const float v[4]) {
+	if (isnan(v[0] + v[1] + v[2] + v[3]))
+		return 0;
+	int res = int(v[0] <= 0) |
+		(int(v[1] <= 0) << 1) |
+		(int(v[2] <= 0) << 2) |
+		(int(v[3] <= 0) << 3);
+	if (res == 5 || res == 10) {
+		vec2 saddle = vec2(v[0] - v[3], v[0] - v[1]) / (v[0] - v[1] + v[2] - v[3]);
+		float saddle_height = mix(mix(v[0], v[3], saddle.y), mix(v[1], v[2], saddle.y), saddle.x);
+		if (saddle_height < 0.0) {
+			if (res == 5) res = 16;
+			if (res == 10) res = 17;
+		}
+	}
+	return res;
+}
 
 // linear interpolation on an edge
-static vec3 getInterpolation(const vec3 pos[8], const float val[8], int i) {
+vec3 getInterpolation(const vec3 pos[8], const float val[8], int i) {
 	float v0 = val[EDGE_LIST[i].x];
 	float v1 = val[EDGE_LIST[i].y];
 	vec3 p0 = pos[EDGE_LIST[i].x];
@@ -176,7 +256,7 @@ static vec3 getInterpolation(const vec3 pos[8], const float val[8], int i) {
 	float t = v0 / (v0 - v1);
 	return p0 * (1 - t) + p1 * t;
 };
-static ivec3 getInterpolation(const ivec3 pos[8], const float val[8], int i) {
+ivec3 getInterpolation(const ivec3 pos[8], const float val[8], int i) {
 	double v0 = (double)val[EDGE_LIST[i].x];
 	double v1 = (double)val[EDGE_LIST[i].y];
 	ivec3 p0 = pos[EDGE_LIST[i].x];
@@ -189,6 +269,11 @@ static ivec3 getInterpolation(const ivec3 pos[8], const float val[8], int i) {
 	}
 	return p;
 };
+
+float getTrilinearInterpolation(const float v[8], vec3 xyz) {
+	return mix(mix(mix(v[0], v[3], xyz.x), mix(v[1], v[2], xyz.x), xyz.y),
+		mix(mix(v[4], v[7], xyz.x), mix(v[5], v[6], xyz.x), xyz.y), xyz.z);
+}
 
 
 
@@ -236,8 +321,14 @@ public:
 	ivec3 p(int i) { return _p + VERTICE_LIST[i] * size; }
 	int size;  // 4 bytes, top right: p+ivec3(size)
 	int index;  // 4 bytes, calculated according to signs of v for table lookup
-	bool has_sign_change[6];  // 6 bytes, indicate whether there is a sign change in each face
-	bool edge_checked[6];  // 6 bytes, used in looking for missed samples, indicate whether the face is already checked
+	union {  // 6 bytes
+		bool has_sign_change[6];  // indicate whether there is a sign change in each face
+		uint8_t face_index[6];  // the index of the face used in disambiguation calculation
+	};
+	union {
+		bool edge_checked[6];  // 6 bytes, used in looking for missed samples, indicate whether the face is already checked
+		bool useDefaultFaceOrientation;  // true if the face orientation according to calcFaceIndexBilinear() is not available in the LUT
+	};
 	octatree_node(int size = 0, ivec3 p = ivec3(-1)) {
 		for (int i = 0; i < 8; i++) this->_p = p;
 		for (int i = 0; i < 8; i++) v[i] = NAN;
@@ -288,8 +379,8 @@ public:
 		}
 		return c[i]->getGrid(q, sz);
 	}
-	int calcIndex() {
-		return (index = CalcIndex(v));
+	int getIndex() {
+		return (index = calcIndex(v));
 	}
 
 	// grid subdivision
@@ -391,7 +482,7 @@ std::vector<octatree_node*> cells;
 void octatree_main() {
 
 	// initialize octatree root
-	timeEventStart("sample octatree root");
+	timeEventStart("sample octree root");
 	create_octatree();
 	for (int x = 0; x <= SEARCH_DIF.x; x++) {
 		for (int y = 0; y <= SEARCH_DIF.y; y++) {
@@ -406,7 +497,7 @@ void octatree_main() {
 				for (int u = 1; u < 8; u++) {
 					ivec3 p = ivec3(x, y, z) + VERTICE_LIST[u];
 					octatree_grid[x][y][z].v[u] = octatree_grid[p.x][p.y][p.z].v[0];
-					octatree_grid[x][y][z].calcIndex();
+					octatree_grid[x][y][z].getIndex();
 				}
 			}
 		}
@@ -425,11 +516,11 @@ void octatree_main() {
 			}
 		}
 	}
-	timeEventEnd("sample octatree root");
+	timeEventEnd("sample octree root");
 
 	// subdivide grid cells
 	for (int layer = 1, size = CELL_PLOT_SIZE; size > 1; layer++) {
-		std::string event_name = "subdivide octatree layer " + std::to_string(layer) + "/" + std::to_string(PLOT_DEPTH);
+		std::string event_name = "subdivide octree layer " + std::to_string(layer) + "/" + std::to_string(PLOT_DEPTH);
 		timeEventStart(event_name);
 
 		std::vector<octatree_node*> new_cells;
@@ -438,7 +529,7 @@ void octatree_main() {
 			octatree_node* ci = cells[i];
 			ci->subdivide(size);
 			for (int u = 0; u < 8; u++) {
-				if (TRIG_TABLE[ci->c[u]->calcIndex()][0] != -1) {
+				if (TRIG_TABLE[ci->c[u]->getIndex()][0] != -1) {
 					new_cells.push_back(ci->c[u]);
 				}
 			}
@@ -476,36 +567,158 @@ void octatree_main() {
 }
 
 
+#if DISAMBIGUATION
+
+// lookup triangulation table
+
+void getTriangulation_general(
+	const std::vector<octatree_node*> &cells,
+	std::vector<const std::vector<ivec3>*> &triangulations
+) {
+	triangulations.clear();
+	for (const octatree_node* cell : cells) {
+		int index = calcIndex(cell->v);
+		if (DISAMBIGUATION_LUT[index].empty()) {
+			triangulations.push_back(nullptr);
+		}
+		else if (DISAMBIGUATION_LUT[index][0].empty()) {
+			if (verbose) fprintf(stderr, "Empty LUT (%d)\n", index);
+			triangulations.push_back(nullptr);
+		}
+		else {
+			triangulations.push_back(&DISAMBIGUATION_LUT[index][0][0]);
+		}
+	}
+}
+
+void getTriangulation_trilinear(
+	std::vector<octatree_node*> &cells,
+	std::vector<const std::vector<ivec3>*> &triangulations
+) {
+	auto hash_ivec3 = [](const ivec3 &p) { return p.x + 31 * (p.y + 31 * (p.z + 31 * 17)); };
+	std::unordered_map<ivec3, octatree_node*, decltype(hash_ivec3)> mp(0, hash_ivec3);
+	for (octatree_node *cell : cells) mp[cell->_p] = cell;
+	// calculate face indices
+	for (octatree_node *cell : cells) {
+		for (int i = 0; i < 6; i++) {
+			float vf[4] = { cell->v[FACE_LIST[i][0]], cell->v[FACE_LIST[i][1]], cell->v[FACE_LIST[i][2]], cell->v[FACE_LIST[i][3]] };
+			int fi = calcFaceIndexBilinear(vf);
+			cell->face_index[i] = fi;
+		}
+	}
+	// use default face orientation if not available
+	// not optimal, subjects to change
+	std::vector<ivec3> bfs;
+	for (std::pair<ivec3, octatree_node*> pc : mp) {
+		octatree_node *cell = pc.second;
+		int index = calcIndex(cell->v);
+		int lookupIndex = Disambiguation::calcDisambiguationFaceIndex(cell->face_index);
+		if (!DISAMBIGUATION_LUT[index].empty() && DISAMBIGUATION_LUT[index][lookupIndex].empty()) {
+			cell->useDefaultFaceOrientation = true;
+			bfs.push_back(pc.first);
+		}
+		else cell->useDefaultFaceOrientation = false;
+	}
+	for (int _ = 0; _ < (int)bfs.size(); _++) {
+		ivec3 p = bfs[_];
+		octatree_node *cell = mp[p];
+		cell->useDefaultFaceOrientation = true;
+		int index = calcIndex(cell->v);
+		int lookupIndex = Disambiguation::calcDisambiguationFaceIndex(cell->face_index);
+		if (DISAMBIGUATION_LUT[index].empty() || !DISAMBIGUATION_LUT[index][lookupIndex].empty()) {
+			continue;
+		}
+		for (int i = 0; i < 6; i++) if (cell->face_index[i] >= 16) {
+			if (cell->face_index[i] == 16) cell->face_index[i] = 5;
+			if (cell->face_index[i] == 17) cell->face_index[i] = 10;
+			ivec3 p1 = p + FACE_DIR[i];
+			auto found = mp.find(p1);
+			if (found != mp.end() && found->second->useDefaultFaceOrientation == false) {
+				bfs.push_back(p1);
+				found->second->face_index[(i + 3) % 6] = cell->face_index[i];
+			}
+		}
+	}
+	// lookup triangulation according to face indices
+	triangulations.clear();
+	for (const octatree_node* cell : cells) {
+		int index = calcIndex(cell->v);
+		int lookupIndex = Disambiguation::calcDisambiguationFaceIndex(cell->face_index);
+		if (DISAMBIGUATION_LUT[index].empty()) {
+			triangulations.push_back(nullptr);
+		}
+		else if (DISAMBIGUATION_LUT[index][lookupIndex].empty()) {
+			if (verbose) fprintf(stderr, "Empty LUT (%d)\n", index);
+			triangulations.push_back(nullptr);
+		}
+		else {
+			// may not be the best way
+			std::vector<std::vector<ivec3>> *tgls = &DISAMBIGUATION_LUT[index][lookupIndex];
+			std::vector<ivec3> *ans = nullptr;
+			float min_loss = (float)INFINITY;
+			vec3 p0s[8]; for (int _ = 0; _ < 8; _++) p0s[_] = vec3(VERTICE_LIST[_]);
+			for (int i = 0; i < (int)tgls->size(); i++) {
+				std::vector<ivec3> *trigs = &tgls->at(i);
+				float sumerr = 0.0f, sumds = 0.0f;
+				for (ivec3 t : *trigs) {
+					vec3 a = getInterpolation(p0s, cell->v, t.x);
+					vec3 b = getInterpolation(p0s, cell->v, t.y);
+					vec3 c = getInterpolation(p0s, cell->v, t.z);
+					float ds = 0.5 * length(cross(b - a, c - a));
+					float err = 0.0;
+					for (vec2 uv : { vec2(0.1667f, 0.1667f), vec2(0.3333f, 0.3333f), vec2(0.6667f, 0.1667f), vec2(0.1667f, 0.6667f)}) {
+						vec3 m = a + (b - a)*uv.x + (c - a)*uv.y;
+						float v = getTrilinearInterpolation(cell->v, m);
+						err += v * v;
+					}
+					sumerr += err * ds, sumds += ds;
+				}
+				float loss = sumerr / sumds;
+				//float loss = 1.0 / sumds;
+				if (loss < min_loss) {
+					min_loss = loss;
+					ans = trigs;
+				}
+			}
+			//ans = &tgls->at(0);
+			triangulations.push_back(ans);
+		}
+	}
+}
+
+#endif
+
+
 // export a discrete list of triangles
 void triangulate(std::vector<triangle_3d> &trigs) {
 	octatree_main();
-#if 0
-	for (int i = 0, cn = (int)cells.size(); i < cn; i++) {
-		vec3 p[8];
-		for (int j = 0; j < 8; j++) p[j] = i2f(cells[i]->p(j));
-		auto v_table = TRIG_TABLE[CalcIndex(cells[i]->v)];
-		for (int u = 0; ; u += 3) {
-			if (v_table[u] == -1) break;
-			vec3 a = getInterpolation(p, cells[i]->v, v_table[u]);
-			vec3 b = getInterpolation(p, cells[i]->v, v_table[u + 1]);
-			vec3 c = getInterpolation(p, cells[i]->v, v_table[u + 2]);
-			trigs.push_back(triangle_3d(a, b, c));
-		}
-	}
-#else
-	DISAMBIGUATION::initDisambiguationTable();
+#if DISAMBIGUATION
+	Disambiguation::initDisambiguationTable();
+	std::vector<const std::vector<ivec3>*> triangulations;
+	getTriangulation_trilinear(cells, triangulations);
 	for (int i = 0; i < (int)cells.size(); i++) {
 		vec3 p[8];
 		for (int j = 0; j < 8; j++) p[j] = i2f(cells[i]->p(j));
-		int index = CalcIndex(cells[i]->v);
-		if (DISAMBIGUATION_LUT[index].empty()) continue;
-		if (DISAMBIGUATION_LUT[index][0].empty()) { fprintf(stderr, "Empty (%d)\n", index); continue; }
-		auto lut = DISAMBIGUATION_LUT[index][0].begin();
+		const std::vector<ivec3> *lut = triangulations[i];
+		if (lut == nullptr) continue;
 		for (int ti = 0; ti < (int)lut->size(); ti++) {
 			ivec3 t = lut->at(ti);
 			vec3 a = getInterpolation(p, cells[i]->v, t.x);
 			vec3 b = getInterpolation(p, cells[i]->v, t.y);
 			vec3 c = getInterpolation(p, cells[i]->v, t.z);
+			trigs.push_back(triangle_3d(a, b, c));
+		}
+	}
+#else
+	for (int i = 0, cn = (int)cells.size(); i < cn; i++) {
+		vec3 p[8];
+		for (int j = 0; j < 8; j++) p[j] = i2f(cells[i]->p(j));
+		auto v_table = TRIG_TABLE[calcIndex(cells[i]->v)];
+		for (int u = 0; ; u += 3) {
+			if (v_table[u] == -1) break;
+			vec3 a = getInterpolation(p, cells[i]->v, v_table[u]);
+			vec3 b = getInterpolation(p, cells[i]->v, v_table[u + 1]);
+			vec3 c = getInterpolation(p, cells[i]->v, v_table[u + 2]);
 			trigs.push_back(triangle_3d(a, b, c));
 		}
 	}
@@ -528,14 +741,40 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 		octatree_node* p;  // cell ID
 		ivec3 po;  // origin of coordinates of triangles
 		int n = 0;  // number of triangles
-		int t[5] = { -1, -1, -1, -1, -1 };
+		int t[7] = { -1, -1, -1, -1, -1, -1, -1 };  // max 6 triangles
 	};
 	std::vector<Triangle> triangles;
 	std::vector<TriangleNode> bottom_layer;
+#if DISAMBIGUATION
+	Disambiguation::initDisambiguationTable();
+	std::vector<const std::vector<ivec3>*> triangulations;
+	getTriangulation_trilinear(cells, triangulations);
 	for (int i = 0; i < (int)cells.size(); i++) {
 		ivec3 p[8];
 		for (int j = 0; j < 8; j++) p[j] = (cells[i]->_p + VERTICE_LIST[j]) * EDGE_ROUNDING;
-		auto v_table = TRIG_TABLE[CalcIndex(cells[i]->v)];
+		const std::vector<ivec3> *lut = triangulations[i];
+		if (lut == nullptr) continue;
+		TriangleNode n;
+		n.p = cells[i];
+		n.po = cells[i]->_p;
+		for (int ti = 0; ti < (int)lut->size(); ti++) {
+			ivec3 t = lut->at(ti);
+			ivec3 a = getInterpolation(p, cells[i]->v, t.x);
+			ivec3 b = getInterpolation(p, cells[i]->v, t.y);
+			ivec3 c = getInterpolation(p, cells[i]->v, t.z);
+			if (a != b && a != c && b != c) {
+				n.t[n.n++] = (int)triangles.size();
+				triangles.push_back(Triangle{ a, b, c });
+			}
+		}
+		if (n.n != 0)
+			bottom_layer.push_back(n);
+	}
+#else
+	for (int i = 0; i < (int)cells.size(); i++) {
+		ivec3 p[8];
+		for (int j = 0; j < 8; j++) p[j] = (cells[i]->_p + VERTICE_LIST[j]) * EDGE_ROUNDING;
+		auto v_table = TRIG_TABLE[calcIndex(cells[i]->v)];
 		if (v_table[0] != -1) {
 			TriangleNode n;
 			n.p = cells[i];
@@ -554,6 +793,7 @@ std::vector<uint8_t> to_buffer(vec3(*colorf)(vec3), bool shrink_grid = true) {
 				bottom_layer.push_back(n);
 		}
 	}
+#endif
 	//std::sort(bottom_layer.begin(), bottom_layer.end(), [](TriangleNode a, TriangleNode b) { return a.p < b.p; });
 	timeEventEnd("reconstruct triangles");
 
@@ -778,8 +1018,10 @@ std::vector<triangle_3d> octatree(Fun fun, vec3 p0, vec3 p1, ivec3 dif, int plot
 
 // octatree to buffer
 template<typename Fun>
-std::vector<uint8_t> octatree_buffer(Fun fun, vec3 p0, vec3 p1, ivec3 dif, int plot_depth, int edge_rounding,
-	vec3(*colorf)(vec3)) {
+std::vector<uint8_t> octatree_buffer(
+	Fun fun, vec3 p0, vec3 p1, ivec3 dif, int plot_depth, int edge_rounding,
+	vec3(*colorf)(vec3)
+) {
 	__private__::fun = fun;
 	__private__::P0 = p0, __private__::P1 = p1;
 	__private__::SEARCH_DIF = dif, __private__::PLOT_DEPTH = plot_depth;

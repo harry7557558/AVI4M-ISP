@@ -2,7 +2,7 @@
 
 #pragma once
 
-#define _MULTITHREADING 0
+#define _MULTITHREADING 1
 
 #pragma warning(disable: 4244)
 #pragma warning(disable: 4305)
@@ -185,7 +185,7 @@ vec3 mainRender(vec3 ro, vec3 rd) {
 	float t;
 	vec3 n, col = vec3(0.0);
 	if (intersectObject(ro, rd, t, 1e6, n, col)) {
-		return col;
+		//return col;
 		return col * abs(dot(normalize(n), rd));
 	}
 	return col;
@@ -401,8 +401,8 @@ void exportTree() {
 
 void Init(char* argv[]) {
 #if 1
-	exportModel(argv[1]); exit(0);
-	//exportTree();
+	//exportModel(argv[1]); exit(0);
+	exportTree();
 #else
 	FILE* fp = fopen("D:\\.bin", "r");
 	fseek(fp, 0, SEEK_END);
