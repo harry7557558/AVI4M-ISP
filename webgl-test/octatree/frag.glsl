@@ -11,6 +11,7 @@ uniform vec2 iResolution;
 
 #define TREEBUFFER_SIZE 1024
 uniform mediump usampler2D uTreeBuffer;
+uniform highp sampler2D fTreeBuffer;
 
 #define ZERO min(iFrame,0)
 
@@ -23,6 +24,7 @@ uniform mediump usampler2D uTreeBuffer;
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
 
 
+// sample integer
 int getUint8(int i) {
     ivec2 pos = ivec2((i/4)%TREEBUFFER_SIZE, (i/4)/TREEBUFFER_SIZE);
     uvec4 sp = texelFetch(uTreeBuffer, pos, 0);
@@ -39,6 +41,27 @@ ivec3 getUvec3(int i) {
 	int y = getUint8(i + 1);
 	int z = getUint8(i + 2);
 	return ivec3(x, y, z);
+}
+
+// test if float is faster than int
+float getUint8f(float i) {
+	float j = floor(i/4.);
+    vec2 pos = vec2(mod(j,float(TREEBUFFER_SIZE)), floor(j/float(TREEBUFFER_SIZE)));
+    vec4 sp = 255.0*texelFetch(fTreeBuffer, ivec2(pos), 0);
+	float f = i - 4.0*j;
+    return f==0. ? sp.x : f==1. ? sp.y : f==2. ? sp.z : sp.w;
+}
+float getUint32f(float i) {
+	float j = floor(i/4.);
+    vec2 pos = vec2(mod(j,float(TREEBUFFER_SIZE)), floor(j/float(TREEBUFFER_SIZE)));
+    vec4 sp = 255.0*texelFetch(fTreeBuffer, ivec2(pos), 0);
+	return sp.x + 256. * (sp.y + 256. * (sp.z + 256. * sp.w));
+}
+vec3 getUvec3f(float i) {
+	float x = getUint8f(i);
+	float y = getUint8f(i + 1.);
+	float z = getUint8f(i + 2.);
+	return vec3(x, y, z);
 }
 
 
@@ -131,4 +154,6 @@ void mainImage(out vec4 fragColor, vec2 fragCoord) {
 
 void main(void) {
     mainImage(fragColor, gl_FragCoord.xy);
+	//float i = gl_FragCoord.y*iResolution.x+gl_FragCoord.x;
+	//fragColor = vec4(vec3(getUint8f(i)),1.0);
 }

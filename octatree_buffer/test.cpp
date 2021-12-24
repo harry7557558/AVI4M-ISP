@@ -125,7 +125,7 @@ vec4 *FrameBuffer = nullptr;
 #define P0 vec3(-2.0, -2.0, -2.0) /* min coordinates of grid */
 #define P1 vec3(2.0, 2.0, 2.0) /* max coordinates of grid */
 #define GRID_DIF ivec3(1) /* initial grid size, at least one odd component */
-#define PLOT_DEPTH 9 /* depth of the tree */
+#define PLOT_DEPTH 6 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
@@ -135,7 +135,7 @@ vec4 *FrameBuffer = nullptr;
 #define PLOT_DEPTH_EXP (PLOT_DEPTH-GRID_EXPAND)
 
 
-#if 1
+#if 0
 #include "test-models/nautilus_shell.h"
 //#include "../.glsl.cpp"
 #else
@@ -179,7 +179,7 @@ ivec3 getUvec3(int i) {
 #include "intersector_2.h"
 
 
-#if 1
+#if 0
 // fast preview
 vec3 mainRender(vec3 ro, vec3 rd) {
 	float t;

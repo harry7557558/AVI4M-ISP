@@ -11,6 +11,15 @@ function loadShaderSource(path) {
     if (request.status == 200) {
         source = request.responseText;
     }
+    else {
+        throw ("Error loading shader source (" + request.status + "): " + path);
+    }
+    const include_regex = /\n\#include\s+[\<\"](.*?)[\>\"]/;
+    while (include_regex.test(source)) {
+        var match = source.match(include_regex);
+        var include_source = loadShaderSource(match[1]);
+        source = source.replace(match[0], "\n" + include_source + "\n");
+    }
     return source;
 }
 
@@ -222,6 +231,13 @@ function main() {
     const canvas = document.getElementById("canvas");
     const gl = canvas.getContext("webgl2") || canvas.getContext("experimental-webgl2");
     if (gl == null) throw ("Failed to load WebGL2");
+
+    canvas.addEventListener("webglcontextlost", function (event) {
+        event.preventDefault();
+        var message = "WebGL Context Lost: Your WebGL implementation has crashed.";
+        document.body.innerHTML = "<h1 style='color:red;'>" + message + "</h1>";
+        console.error(message, event);
+    }, false);
 
     var renderer = {
         canvas: canvas,

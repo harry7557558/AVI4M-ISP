@@ -1,12 +1,11 @@
-// raymarching on octree
+// test if float is faster than int
+// answer: no
 
-#include "test.cpp"
 
-
-const ivec3 VERTEX_LIST[8] = {
-	ivec3(0,0,0), ivec3(0,1,0), ivec3(1,1,0), ivec3(1,0,0),
-	ivec3(0,0,1), ivec3(0,1,1), ivec3(1,1,1), ivec3(1,0,1)
-};
+const vec3 VERTEX_LIST[8] = vec3[8](
+	vec3(0,0,0), vec3(0,1,0), vec3(1,1,0), vec3(1,0,0),
+	vec3(0,0,1), vec3(0,1,1), vec3(1,1,1), vec3(1,0,1)
+);
 
 vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
 	vec3 p = -inv_rd * ro;
@@ -32,17 +31,17 @@ float intersectTriangle(vec3 ro, vec3 rd, vec3 v01, vec3 v02) {
 
 
 
-#define USE_STACK 1
+#define USE_STACK 0
 
 struct StackElement {
-	int ptr;  // pointer to the stack element
-	ivec3 pos;  // position of the cell
+	float ptr;  // pointer to the stack element
+	vec3 pos;  // position of the cell
 	float max_t;  // intersectBox().y
 };
 
 
 // ray-object intersection, grid/tree lookup
-bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3 &col) {
+bool intersectObject(vec3 ro, vec3 rd, out float min_t, float t1, out vec3 min_n, out vec3 col) {
 	float t;
 	min_t = t1;
 
@@ -52,7 +51,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	if (ib.y <= 0.0 || ib.x > t1) return false;
 
 	// calculate the order to traverse subcells
-	int subcell_order[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+	int subcell_order[8] = int[8](0, 1, 2, 3, 4, 5, 6, 7);
 	float dist[8];
 	for (int i = 0; i < 8; i++) {
 		dist[i] = dot(vec3(VERTEX_LIST[i]), rd);
@@ -72,19 +71,19 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 
 	// stack
 #if USE_STACK
-	StackElement stk[PLOT_DEPTH + 1];
-	int stkptr = -1;
+	StackElement stk[12];
+	float stkptr = -1.;
 #endif
 
 	// debug
-	int loop_count = 0;
-	int trig_int_count = 0;
-	int box_int_count = 0;
+	float loop_count = 0.;
+	float trig_int_count = 0.;
+	float box_int_count = 0.;
 
 	// grid
 	for (int xi = ZERO; xi < GRID_DIF.x; xi++) for (int yi = ZERO; yi < GRID_DIF.y; yi++) for (int zi = ZERO; zi < GRID_DIF.z; zi++) {
-		int grid_pos = getUint32(4 * ((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
-		if (grid_pos == 0) continue;
+		float grid_pos = getUint32f(4. * float((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
+		if (grid_pos == 0.) continue;
 
 		// intersect grid cell
 		box_int_count++;
@@ -94,9 +93,9 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 		vec2 t01 = intersectBox(r, ro - c, inv_rd);
 		if (t01.y <= 0.0 || t01.x > min_t) continue;
 #if USE_STACK
-		stkptr = 0;
-		stk[stkptr].ptr = grid_pos;
-		stk[stkptr].pos = ivec3(xi, yi, zi) * (1 << PLOT_DEPTH);
+		stkptr = 0.;
+		stk[int(stkptr)].ptr = grid_pos;
+		stk[int(stkptr)].pos = vec3(xi, yi, zi) * exp2(float(PLOT_DEPTH));
 #endif
 		float epsilon = max(0.01f * min(min(r.x, r.y), r.z) * exp2(-float(PLOT_DEPTH)), 1e-4f);
 
@@ -105,21 +104,21 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 		float t_max = min(t01.y, min_t) - epsilon;
 		while (!(t0 >= t_max)) {
 			loop_count++;
-			if (loop_count > 1024) { col = vec3(1, 0, 0); return true; }
+			if (loop_count > 1024.) { col = vec3(1, 0, 0); break; }
 
 			// find the next cell
 #if USE_STACK
-			for (; stkptr > 0;) {
+			for (; stkptr > 0.;) {
 				stkptr--;
-				if (stk[stkptr].max_t > t0 + epsilon) break;
+				if (stk[int(stkptr)].max_t > t0 + epsilon) break;
 			}
-			int cell_size = 1 << (PLOT_DEPTH - stkptr);
-			ivec3 cell_pos = stk[stkptr].pos;
-			int ptr = stk[stkptr].ptr;
-			for (; stkptr < PLOT_DEPTH;) {
+			float cell_size = exp2(float(PLOT_DEPTH) - stkptr);
+			vec3 cell_pos = stk[int(stkptr)].pos;
+			float ptr = stk[int(stkptr)].ptr;
+			for (; stkptr < float(PLOT_DEPTH);) {
 				stkptr++;
-				cell_size /= 2;
-				ivec3 cell_pos_1 = cell_pos;
+				cell_size /= 2.;
+				vec3 cell_pos_1 = cell_pos;
 				for (int j = 0; j < 8; j++) {
 					int i = subcell_order[j];
 					box_int_count++;
@@ -129,23 +128,23 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					vec2 t01_t = intersectBox(r, ro - c, inv_rd);
 					if (t01_t.y > t0 + epsilon) {
 						t01 = t01_t;
-						ptr = getUint32(ptr + 4 * i);
-						stk[stkptr].max_t = t01_t.y;
+						ptr = getUint32f(ptr + 4. * float(i));
+						stk[int(stkptr)].max_t = t01_t.y;
 						break;
 					}
 				}
-				if (ptr == 0) break;
+				if (ptr == 0.) break;
 				cell_pos = cell_pos_1;
-				stk[stkptr].ptr = ptr;
-				stk[stkptr].pos = cell_pos;
+				stk[int(stkptr)].ptr = ptr;
+				stk[int(stkptr)].pos = cell_pos;
 			}
 #else
-			int cell_size = 1 << PLOT_DEPTH;
-			ivec3 cell_pos = ivec3(xi, yi, zi) * cell_size;
-			int ptr = grid_pos;
-			for (int si = 0; si < PLOT_DEPTH; si++) {
-				cell_size /= 2;
-				ivec3 cell_pos_1 = cell_pos;
+			float cell_size = exp2(float(PLOT_DEPTH));
+			vec3 cell_pos = vec3(xi, yi, zi) * cell_size;
+			float ptr = grid_pos;
+			for (float si = 0.; si < float(PLOT_DEPTH); si++) {
+				cell_size /= 2.;
+				vec3 cell_pos_1 = cell_pos;
 				for (int j = 0; j < 8; j++) {
 					int i = subcell_order[j];
 					box_int_count++;
@@ -155,32 +154,32 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					vec2 t01_t = intersectBox(r, ro - c, inv_rd);
 					if (t01_t.y > t0 + epsilon) {
 						t01 = t01_t;
-						ptr = getUint32(ptr + 4 * i);
+						ptr = getUint32f(ptr + 4. * float(i));
 						break;
 					}
 				}
 				cell_pos = cell_pos_1;
-				if (ptr == 0) break;
+				if (ptr == 0.) break;
 			}
 #endif
 
 			// triangles
-			if (ptr != 0) {
-				int n = getUint8(ptr);
-				ivec3 po = cell_pos * EDGE_ROUNDING;
+			if (ptr != 0.) {
+				float n = getUint8f(ptr);
+				vec3 po = cell_pos * float(EDGE_ROUNDING);
 				bool triangle_found = false;
-				for (int ti = 0; ti < n; ti++) {
+				for (float ti = 0.; ti < n; ti++) {
 					trig_int_count++;
-					ivec3 vi0 = getUvec3(ptr + 12 * ti + 1);
-					ivec3 vi1 = getUvec3(ptr + 12 * ti + 4);
-					ivec3 vi2 = getUvec3(ptr + 12 * ti + 7);
+					vec3 vi0 = getUvec3f(ptr + 12. * ti + 1.);
+					vec3 vi1 = getUvec3f(ptr + 12. * ti + 4.);
+					vec3 vi2 = getUvec3f(ptr + 12. * ti + 7.);
 					vec3 v0 = mix(P0, P1, vec3(po + vi0) / vec3(MESH_SIZE));
 					vec3 v01 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi1 - vi0);
 					vec3 v02 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi2 - vi0);
 					t = intersectTriangle(ro - v0, rd, v01, v02);
 					if (t > 0.0 && t < min_t) {
 						min_t = t, min_n = cross(v01, v02);
-						col = vec3(getUvec3(ptr + 12 * ti + 10)) / 255.0;
+						col = getUvec3f(ptr + 12. * ti + 10.) / 255.0;
 						triangle_found = true;
 					}
 				}

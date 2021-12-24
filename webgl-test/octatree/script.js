@@ -61,9 +61,13 @@ function loadTreeTexture(renderer, url, texture_name) {
 
         console.log(treeBufferPadded.length);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8UI,
-            BUFFER_SIZE, BUFFER_SIZE, 0,
-            gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
-            treeBufferPadded);
+           BUFFER_SIZE, BUFFER_SIZE, 0,
+           gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
+           treeBufferPadded);
+        // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
+        //     BUFFER_SIZE, BUFFER_SIZE, 0,
+        //     gl.RGBA, gl.UNSIGNED_BYTE,
+        //     treeBufferPadded);
 
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -140,6 +144,9 @@ function drawScene(renderer) {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, textures.treeSampler);
     gl.uniform1i(gl.getUniformLocation(programs.renderProgram, "uTreeBuffer"), 0);
+    // gl.activeTexture(gl.TEXTURE1);
+    // gl.bindTexture(gl.TEXTURE_2D, textures.treeSampler);
+    // gl.uniform1i(gl.getUniformLocation(programs.renderProgram, "fTreeBuffer"), 1);
 
     // render
     {
@@ -156,6 +163,13 @@ function main() {
     const canvas = document.getElementById("canvas");
     const gl = canvas.getContext("webgl2") || canvas.getContext("experimental-webgl2");
     if (gl == null) throw ("Failed to load WebGL2");
+
+    canvas.addEventListener("webglcontextlost", function (event) {
+        event.preventDefault();
+        var message = "WebGL Context Lost: Your WebGL implementation has crashed.";
+        document.body.innerHTML = "<h1 style='color:red;'>" + message + "</h1>";
+        console.error(message, event);
+    }, false);
 
     var renderer = {
         canvas: canvas,

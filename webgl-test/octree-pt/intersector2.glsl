@@ -1,12 +1,10 @@
 // raymarching on octree
 
-#include "test.cpp"
 
-
-const ivec3 VERTEX_LIST[8] = {
+const ivec3 VERTEX_LIST[8] = ivec3[8](
 	ivec3(0,0,0), ivec3(0,1,0), ivec3(1,1,0), ivec3(1,0,0),
 	ivec3(0,0,1), ivec3(0,1,1), ivec3(1,1,1), ivec3(1,0,1)
-};
+);
 
 vec2 intersectBox(vec3 r, vec3 ro, vec3 inv_rd) {  // inv_rd = 1/rd
 	vec3 p = -inv_rd * ro;
@@ -42,7 +40,11 @@ struct StackElement {
 
 
 // ray-object intersection, grid/tree lookup
-bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3 &col) {
+bool intersectOctree(usampler2D treeSampler, vec3 P0, vec3 P1, ivec3 GRID_DIF, int PLOT_DEPTH, int EDGE_ROUNDING,
+    vec3 ro, vec3 rd, out float min_t, float t1, out vec3 min_n, out vec3 col) {
+    ivec3 GRID_SIZE = GRID_DIF*(1<<PLOT_DEPTH);
+    ivec3 MESH_SIZE = (GRID_SIZE*EDGE_ROUNDING);
+
 	float t;
 	min_t = t1;
 
@@ -52,7 +54,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	if (ib.y <= 0.0 || ib.x > t1) return false;
 
 	// calculate the order to traverse subcells
-	int subcell_order[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+	int subcell_order[8] = int[8](0, 1, 2, 3, 4, 5, 6, 7);
 	float dist[8];
 	for (int i = 0; i < 8; i++) {
 		dist[i] = dot(vec3(VERTEX_LIST[i]), rd);
@@ -72,7 +74,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 
 	// stack
 #if USE_STACK
-	StackElement stk[PLOT_DEPTH + 1];
+	StackElement stk[12];
 	int stkptr = -1;
 #endif
 
@@ -82,8 +84,8 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 	int box_int_count = 0;
 
 	// grid
-	for (int xi = ZERO; xi < GRID_DIF.x; xi++) for (int yi = ZERO; yi < GRID_DIF.y; yi++) for (int zi = ZERO; zi < GRID_DIF.z; zi++) {
-		int grid_pos = getUint32(4 * ((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
+	for (int xi = int(ZERO); xi < GRID_DIF.x; xi++) for (int yi = int(ZERO); yi < GRID_DIF.y; yi++) for (int zi = int(ZERO); zi < GRID_DIF.z; zi++) {
+		int grid_pos = getUint32(treeSampler, 4 * ((zi * GRID_DIF.y + yi) * GRID_DIF.x + xi));
 		if (grid_pos == 0) continue;
 
 		// intersect grid cell
@@ -105,7 +107,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 		float t_max = min(t01.y, min_t) - epsilon;
 		while (!(t0 >= t_max)) {
 			loop_count++;
-			if (loop_count > 1024) { col = vec3(1, 0, 0); return true; }
+			if (loop_count > 1024) { col = vec3(1, 0, 0); break; }
 
 			// find the next cell
 #if USE_STACK
@@ -129,7 +131,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					vec2 t01_t = intersectBox(r, ro - c, inv_rd);
 					if (t01_t.y > t0 + epsilon) {
 						t01 = t01_t;
-						ptr = getUint32(ptr + 4 * i);
+						ptr = getUint32(treeSampler, ptr + 4 * i);
 						stk[stkptr].max_t = t01_t.y;
 						break;
 					}
@@ -155,7 +157,7 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 					vec2 t01_t = intersectBox(r, ro - c, inv_rd);
 					if (t01_t.y > t0 + epsilon) {
 						t01 = t01_t;
-						ptr = getUint32(ptr + 4 * i);
+						ptr = getUint32(treeSampler, ptr + 4 * i);
 						break;
 					}
 				}
@@ -166,21 +168,21 @@ bool intersectObject(vec3 ro, vec3 rd, float &min_t, float t1, vec3 &min_n, vec3
 
 			// triangles
 			if (ptr != 0) {
-				int n = getUint8(ptr);
+				int n = getUint8(treeSampler, ptr);
 				ivec3 po = cell_pos * EDGE_ROUNDING;
 				bool triangle_found = false;
 				for (int ti = 0; ti < n; ti++) {
 					trig_int_count++;
-					ivec3 vi0 = getUvec3(ptr + 12 * ti + 1);
-					ivec3 vi1 = getUvec3(ptr + 12 * ti + 4);
-					ivec3 vi2 = getUvec3(ptr + 12 * ti + 7);
+					ivec3 vi0 = getUvec3(treeSampler, ptr + 12 * ti + 1);
+					ivec3 vi1 = getUvec3(treeSampler, ptr + 12 * ti + 4);
+					ivec3 vi2 = getUvec3(treeSampler, ptr + 12 * ti + 7);
 					vec3 v0 = mix(P0, P1, vec3(po + vi0) / vec3(MESH_SIZE));
 					vec3 v01 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi1 - vi0);
 					vec3 v02 = ((P1 - P0) / vec3(MESH_SIZE)) * vec3(vi2 - vi0);
 					t = intersectTriangle(ro - v0, rd, v01, v02);
 					if (t > 0.0 && t < min_t) {
 						min_t = t, min_n = cross(v01, v02);
-						col = vec3(getUvec3(ptr + 12 * ti + 10)) / 255.0;
+						col = vec3(getUvec3(treeSampler, ptr + 12 * ti + 10)) / 255.0;
 						triangle_found = true;
 					}
 				}
