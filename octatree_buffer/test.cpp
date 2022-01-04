@@ -122,10 +122,10 @@ vec4 *FrameBuffer = nullptr;
 
 #define ZERO 0
 
-#define P0 vec3(-2.0, -2.0, -2.0) /* min coordinates of grid */
-#define P1 vec3(2.0, 2.0, 2.0) /* max coordinates of grid */
+#define P0 vec3(-2.5, -2.5, -2.0) /* min coordinates of grid */
+#define P1 vec3(2.5, 2.5, 2.0) /* max coordinates of grid */
 #define GRID_DIF ivec3(1) /* initial grid size, at least one odd component */
-#define PLOT_DEPTH 6 /* depth of the tree */
+#define PLOT_DEPTH 9 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)
@@ -135,9 +135,15 @@ vec4 *FrameBuffer = nullptr;
 #define PLOT_DEPTH_EXP (PLOT_DEPTH-GRID_EXPAND)
 
 
-#if 0
-#include "test-models/nautilus_shell.h"
-//#include "../.glsl.cpp"
+#if 1
+namespace GLSL_INNER {
+#define iTime 0.0
+#define iFrame 0
+#include "../.glsl.cpp"
+};
+vec4 map(vec3 p, bool col_required) {
+	return GLSL_INNER::map(p, col_required);
+}
 #else
 vec4 map(vec3 p, bool col_required) {
 	float d = length(p) - 1.0 + 0.2*sin(10.0*p.x)*sin(10.0*p.y)*sin(10.0*p.z);
@@ -401,8 +407,8 @@ void exportTree() {
 
 void Init(char* argv[]) {
 #if 1
-	//exportModel(argv[1]); exit(0);
-	exportTree();
+	exportModel(argv[1]); exit(0);
+	//exportTree();
 #else
 	FILE* fp = fopen("D:\\.bin", "r");
 	fseek(fp, 0, SEEK_END);
