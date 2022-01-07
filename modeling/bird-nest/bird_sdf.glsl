@@ -136,8 +136,8 @@ vec4 mapBirdHead(vec3 p, bool col_required) {
 
 vec4 mapBirdFeather(vec3 p, bool col_required) {
     p -= vec3(0,0,1);
-    float bound = sdEllipsoid(p-vec3(0.04,0,0.25), vec3(0.4,0.2,1.5)), boundw = 0.1;
-    if (bound > 0.0) return vec4(1,0,0, bound+boundw);  // clipping
+    vec4 bound = vec4(0.55,0.35,0.2,sdEllipsoid(p-vec3(0.04,0,0.25), vec3(0.4,0.2,1.5))), boundw = vec4(0,0,0,0.1);
+    if (bound.w > 0.0) return bound+boundw;  // clipping
     vec4 rachis = vec4(0.5,0.45,0.4, sdCapsule(p-vec3(0,0,-1), 2.2, 0.04*(0.5-0.5*tanh(1.5*(p.z-1.2)))));
     vec4 barbs = vec4(0,0,0, 1e8);
     //float barb = sin(120.0*(2.0*pow(abs(p.x),1.4)-p.z));
@@ -149,7 +149,7 @@ vec4 mapBirdFeather(vec3 p, bool col_required) {
     if (col_required) barbs.xyz = mix(vec3(0.25,0.2,0.2), vec3(0.95,0.75,0.5),
         smootherstep(-0.4+8.0*(abs(p.x)+1.5*p.y)*(2.0-1.3/(1.0+sqr(0.9*(p.z-0.8))))));
     vec4 feather = smin(rachis, barbs, 0.01);
-    feather.w = mix(feather.w, bound+boundw, smoothstep(0.,1.,(bound+boundw)/boundw));  // smooth clipping
+    feather = mix(feather, bound+boundw, smoothstep(0.,1.,(bound.w+boundw.w)/boundw.w));  // smooth clipping
     return feather;
 }
 
@@ -164,15 +164,15 @@ vec4 mapBirdLeg(vec3 p, vec3 joint1, vec3 joint2, vec3 joint3, float digitl, flo
     vec3 v0 = vec3(0,1,0);
     vec3 u0 = cross(v0, w);
     for (float digit=ZERO; digit<4.; digit++) {
-        float a = mix(0.1*PI, 1.2*PI, pow(digit/3.,0.7));
+        float a = mix(0.1*PI, 1.1*PI, pow(digit/3.,1.0));
         vec3 u = cos(a)*v0+sin(a)*u0;
         vec3 q = vec3(0.0);
         vec4 toe = vec4(0,0,0, 1e8);
         for (float i=ZERO; i<digit+2.; i++) {
             float a = digita0 + i*digita;
-            vec3 dq = digitl/sqrt(i+1.) * (u * cos(a) + w * sin(a));
-            vec4 bone = vec4(0,0,0, sdSegment(p-joint3, q, q+dq)-0.03*exp(-0.2*i));
-            if (col_required) bone.xyz = pow(mix(vec3(0.5,0.1,0.05), vec3(0.55,0.3,0.1), exp(-0.3*i)), vec3(0.5));
+            vec3 dq = digitl/pow(i+1.,1.0) * (u * cos(a) + w * sin(a));
+            vec4 bone = vec4(0,0,0, sdSegment(p-joint3, q, q+dq)-0.04*exp(-0.2*i));
+            if (col_required) bone.xyz = pow(mix(vec3(0.5,0.1,0.05), vec3(0.55,0.3,0.1), exp(-0.3*i)), vec3(0.4545));
             toe = smin(toe, bone, 0.01);
             q += dq;
         }
@@ -187,11 +187,12 @@ vec4 mapBirdBody(vec3 p, bool col_required) {
         sdEllipsoid(p-vec3(0.05*cos(2.5*p.z)+0.05*sin(1.5*p.z)*sin(p.x)-0.02*sin(3.0*p.z),0,0),
             vec3(0.48+0.07*p.z, 0.5/(1.0+sqr(0.3*(p.z-0.5))), 1.2)) );
     if (col_required) {  // body texture
-        float t = 0.5*(2.0*p.x-0.2*p.z+0.3*p.z*p.z+0.5);
-        vec2 uv = vec2(cos(atan(p.y,p.x+0.2*p.z))+exp(0.4*p.z),p.z);
+        float t = 0.5*(2.0*p.x-0.4*p.z+0.3*p.z*p.z+0.5);
+        vec2 uv = vec2(cos(atan(p.y,p.x+0.2*p.z+0.2))+exp(0.4*p.z),p.z);
         t += 0.2*GradientNoise2D(vec2(14.0,8.0)*uv);
-        body.xyz = mix(body.xyz, vec3(0.55,0.35,0.2), 0.9*smootherstep(t));
+        body.xyz = mix(body.xyz, vec3(0.55,0.35,0.2), 0.85*smootherstep(t));
     }
+    //return body;
     vec4 tail = vec4(0,0,0, 1e8);
     for (float i=ZERO, t; bool(t=(i+0.5)/4.) && i<4.; i++) {  // tail feathers
         vec3 q = mix(vec3(0,0.05,-0.9), vec3(0,0.2,-0.9), t);
@@ -297,17 +298,21 @@ vec4 mapBirdWing(vec3 p, vec3 joint1, vec3 joint2, vec3 tip, bool col_required) 
 }
 
 vec4 mapBird(vec3 p, bool col_required) {
+    float y0 = p.y;
     p.y = length(vec2(p.y,0.02));
-    vec4 head = mapBirdHead(roty(0.2)*(p-vec3(-0.75,0,0.75)), col_required);
+    vec4 head = mapBirdHead(roty(0.2)*(p-vec3(-0.75,0,0.75))/0.9, col_required)*vec4(1,1,1,0.9);
     vec4 body = mapBirdBody(roty(0.7)*p, col_required);
     body = smin(head, body, 0.2);
-    vec4 leg = mapBirdLeg(roty(-0.3)*(p-vec3(-0.1,0.2,-0.4))*vec3(1,-1,1)/0.7,
-        vec3(-0.25,0,-0.15), vec3(-0.05,0,-0.4), vec3(-0.2,0,-0.55), 0.12, -0.4, 0.05*PI, 0.1*PI, col_required)*0.7;
-    body = smin(body, leg, 0.2);
+    vec4 leg = mapBirdLeg(roty(-0.45)*(p-vec3(0.25,0.25-0.08*y0,-0.35))*vec3(1,-1,1)/0.7,
+        vec3(-0.6,0.05,-0.15), vec3(-0.2+0.1*y0,-0.0,-0.3), vec3(-0.6+0.1*y0,-0.1,-0.45-0.25*y0),
+        0.17-0.05*y0, -0.4*PI, 0.15*PI-0.5*y0, 0.1*PI-0.2*y0, col_required)*0.7;
+    body = smin(body, leg, 0.15);
+    //return body;
     vec3 rzyx = mix(vec3(-0.2,-0.3,0.3), vec3(-1.2,0.2,0.9), 0.2);
-    vec4 wing = mapBirdWing(rotz(rzyx.x)*roty(rzyx.y)*rotx(rzyx.z)*(p-vec3(-0.1,0.25,0.55))*vec3(1,-1,1)/0.7,
+    vec3 wing_p = rotz(rzyx.x)*roty(rzyx.y)*rotx(rzyx.z)*(p-vec3(-0.1,0.25,0.55))*vec3(1,-1,1);
+    vec4 wing = mapBirdWing(wing_p/0.7,
          vec3(0.5,0.0,0.05),vec3(0.4,0.05,0.7),vec3(0.7,0.1,1.1), col_required)*0.7;
-    body = smin(body, wing, 0.05);
+    body = smin(body, wing, 0.15*exp(-8.0*dot(wing_p,wing_p)));
     return body;
 }
 
