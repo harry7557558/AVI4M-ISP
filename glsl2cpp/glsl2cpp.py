@@ -60,7 +60,9 @@ def convert_float(glsl_source: str) -> str:
     return glsl_source
 
 
-def glsl2cpp(glsl_source: str) -> str:
+def glsl2cpp(filepath: str) -> str:
+    print("Open GLSL source:", filepath)
+    glsl_source = open(filepath, "r").read()
     glsl_source = glsl_source.replace('\t', ' '*4)
     glsl_source = convert_swizzling(glsl_source)
     glsl_source = replace_inout(glsl_source)
@@ -69,7 +71,13 @@ def glsl2cpp(glsl_source: str) -> str:
     glsl_source = glsl_source.replace('\r\n', '\n').split('\n')
     glsl_source_1 = []
     for line in glsl_source:
-        if not line.startswith('#iChannel'):
+        if line.startswith('#include'):
+            # assume relative path
+            regex = r"#include [\<\"\']([A-Za-z0-9\-_\.]+)[\>\"\']"
+            sourcepath = re.match(regex, line).group(1)
+            directory = filepath[:filepath.rfind('/')+1]
+            glsl_source_1.append(glsl2cpp(directory+sourcepath))
+        elif not line.startswith('#iChannel'):
             glsl_source_1.append(line)
     glsl_source = '\n'.join(glsl_source_1)
 
@@ -81,10 +89,7 @@ if __name__ == "__main__":
     if len(argv) < 2:
         argv = [__file__, ".glsl", ".glsl.cpp"]
 
-    print("Open GLSL source:", argv[1])
-    source = open(argv[1], "r").read()
-
-    source = glsl2cpp(source)
+    source = glsl2cpp(argv[1].replace('\\', '/'))
 
     print("Write C++ source to:", argv[2])
     with open(argv[2], "w") as fp:
