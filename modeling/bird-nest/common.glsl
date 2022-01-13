@@ -1,3 +1,7 @@
+#ifndef COMMON_GLSL
+
+#define COMMON_GLSL
+
 // constants
 #define PI 3.1415926
 #define ZERO min(iTime,0.)
@@ -164,3 +168,5 @@ float SimplexNoise3D(vec3 xyz) {
     vec4 w = max(-vec4(dot(f0, f0), dot(f1, f1), dot(f2, f2), dot(f3, f3)) + 0.5, vec4(0.0));
     return dot((w*w*w*w) * v, vec4(32.0));
 }
+
+#endif // COMMON_GLSL

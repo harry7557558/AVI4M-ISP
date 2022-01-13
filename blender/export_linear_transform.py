@@ -53,7 +53,11 @@ def get_euler_angles(rotmat, rotation_mode: str):
     a = scipy.optimize.minimize(loss_function, a0, method='Nelder-Mead',
                                 options={'xatol': 1e-2*EPSILON, 'fatol': (1e-2*EPSILON)**2})
     a = np.average(a['final_simplex'][0], (0))
-    assert loss_function(a) < EPSILON
+    loss = loss_function(a)
+    if not loss < EPSILON:
+        print(rotmat)
+        print(a, loss)
+        assert False
 
     a = (a+PI) % (2.0*PI)-PI
     return clean_round_arr(a)
@@ -90,7 +94,7 @@ def get_transform_code(obj):
     clean_round_arr(scale, -1.)
 
     # get rotation components
-    rotmat = np.matmul(matrix3, np.diag(1.0/scale[0:3]))
+    rotmat = np.matmul(matrix3, np.diag(scale[3]/scale[0:3]))
     assert np.linalg.norm(np.matmul(rotmat, rotmat.T) -
                           np.identity(3)) < EPSILON  # orthogonal matrix
     rotate_mode = 'XYZ'
@@ -105,7 +109,7 @@ def get_transform_code(obj):
         axis = rotate_mode[i]
         code_r += "rot"+axis.lower() + \
             "(" + string_join_array([-angles[i]/PI]) + "*PI)*"
-    code_s = "/vec3(" + string_join_array(scale[0:3]) + ")"
+    code_s = "/vec3(" + string_join_array(scale[3]*scale[0:3]) + ")"
     code_s1 = "*vec4(1,1,1,"+string_join_array([min(scale[0:3])])+")"
     code = name+"(("+code_r+code_t+")"+code_s+", col_required)"+code_s1
     code_full = "d = smin(d, " + code + ", 0.01);"

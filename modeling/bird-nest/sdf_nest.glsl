@@ -54,8 +54,9 @@ vec4 mapNest(vec3 p, bool col_required) {
 }
 
 
+#ifndef NO_MAP
 vec4 map(vec3 p, bool col_required) {
     vec4 d = mapNest(p, col_required);
     return d;
 }
-
+#endif

@@ -97,7 +97,7 @@ d = smin(d, mapLiriopeLeaf((rotx(0.06*PI)*roty(0.20*PI)*rotz(0.66*PI)*(p-vec3(-0
 }
 
 
-// map
+#ifndef NO_MAP
 vec4 map(vec3 p, bool col_required) {
     //return mapLiriopeFlowersLayer(0.2*PI, p, col_required);
     //return mapLiriopeFlowers(p, col_required);
@@ -105,3 +105,4 @@ vec4 map(vec3 p, bool col_required) {
     return mapLiriopeLeaves5(p, col_required);
     return mapLiriopeGroupTest01(p, col_required);
 }
+#endif

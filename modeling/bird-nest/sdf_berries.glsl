@@ -73,9 +73,57 @@ vec4 mapBerriesLeafT(vec3 p, bool col_required) {
     return mapBerriesLeaf( p/0.7-vec3(1.8,0,0), col_required) * vec4(1,1,1,0.7);
 }
 
-
-vec4 map(vec3 p, bool col_required) {
-    //return mapBerriesLeaf(p, col_required);
-    return mapBerriesFruit(p, col_required);
+vec4 mapBerriesFlower(vec3 p, bool col_required) {
+    float bound = sdEllipsoid(p-vec3(0.0,0.0,0.2), vec3(2.0,2.0,1.0)), boundw = 0.3;
+    if (bound > 0.0) return vec4(1,0,0, bound+boundw);  // clipping
+    float r = length(p.xy), a = atan(p.y, p.x);
+    vec3 q;
+    // petals
+    q = vec3(r*cossin(asin(0.99*sin(5.0*a-1.2))/5.0), p.z);
+    vec4 petal = vec4(0.9,0.8,0.1,
+        sdEllipsoid(roty(0.15*PI+0.15*q.x)*(q-vec3(1.0,0.3,0.1)), vec3(0.55+0.1*q.x*exp(-sqr(6.0*q.y)),0.6,0.1)));
+    if (col_required) {
+        float t = 0.5+0.5*cos(8.0*atan(q.y,q.x))-2.0*exp(-4.0*(r-0.5));
+        petal.xyz = mix(vec3(0.75,0.5,0.), vec3(0.95,0.85,0.25), 0.5+0.5*smoothstep(0.,1.,t));
+    }
+    // filaments
+    q = vec3(r*cossin(asin(0.97*sin(2.5*a-1.2))/2.5), p.z);
+    vec4 disk = vec4(mix(vec3(1.0,1.0,0.6), vec3(0.9,0.8,0.1), smootherstep(pow(length(q.xy),0.6))),
+            sdEllipsoid(q-vec3(0.25,0,-0.1), vec3(0.45,0.5,0.15)));
+    //disk = smin(disk, vec4(1.0,1.0,0.6, sdEllipsoid(q-vec3(-0.1,0,-0.1), vec3(0.3,0.3,0.3))), 0.2);
+    disk.w += 0.01 * length(p.xy)*(sin(15.0*atan(p.y,p.x))+sin(40.0*length(p.xy)));
+    q = vec3(r*cossin(asin(0.99*sin(6.5*a-1.2))/6.5), p.z);
+    vec4 anther = vec4(mix(vec3(0.75,0.55,0.),vec3(1.0,0.9,0.3),0.8+0.2*sin(9.0*a)),
+        sdEllipsoid(roty(0.2*PI)*(q-vec3(0.65+0.05*cos(5.0*a),0,0.0+0.01*sin(4.0*a))), vec3(0.1,0.1,0.05)));
+    disk = smin(disk, anther, 0.05);
+    // sepal/stem
+    q = vec3(r*cossin(asin(0.98*sin(2.5*a-1.2))/2.5), p.z);
+    q -= vec3(0.2,0,0);
+    vec3 br = 1.2*vec3(
+        1.0+0.1*sin(3.0*a)-0.1*cos(2.0*a),
+        1.25*(0.3-0.2*exp(-sqr(1.8*(q.x-1.6)))-0.2*exp(-sqr(3.0*(q.x-0.0)))),
+        0.05);
+    q = roty(smin(0.2*r,0.5,0.1))*(q-1.4*vec3(0.2,0,-0.15));
+    q.z -= clamp(
+        (0.1*pow(abs(q.x),4.0)+0.02*r*r*sin(3.0*a))*sin(a) + 0.02*sin(12.0*r)-0.1*sin(4.0*pow(r,1.3))
+        - 0.05*exp(-sqr(12.0*q.y))*exp(-r),
+        -0.5, 0.5);
+    vec4 sepal = vec4(mix(0.8*vec3(0.35,0.5,0.0),vec3(0.4,0.55,0.0),smootherstep(2.0*r-1.0)), sdEllipsoid(q, br));
+    vec4 stem = vec4(0.4,0.4,0.15, sdCapsule(p-vec3(0.05,0,-0.5), 0.2, 0.1));
+    sepal = smin(sepal, stem, 0.1);
+    // put all together
+    vec4 d = smin(smin(petal, disk, 0.05), sepal, 0.05);
+    return d;
+}
+vec4 mapBerriesFlowerT(vec3 p, bool col_required) {
+    return mapBerriesFlower( p/0.5-vec3(0,0,0.5), col_required) * vec4(1,1,1,0.5);
 }
 
+
+#ifndef NO_MAP
+vec4 map(vec3 p, bool col_required) {
+    //return mapBerriesLeaf(p, col_required);
+    //return mapBerriesFruit(p, col_required);
+    return mapBerriesFlower(p, col_required);
+}
+#endif

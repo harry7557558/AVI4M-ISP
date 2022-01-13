@@ -206,8 +206,10 @@ vec4 mapBird(vec3 p, bool col_required) {
 }
 
 
+#ifndef NO_MAP
 vec4 map(vec3 p, bool col_required) {
     //return mapBirdFeather(p+vec3(0,0,1), col_required);
     //return mapBirdWing(p-vec3(-1,0,-1), vec3(0.5,0.0,0.15), vec3(0.4,0.05,0.8), vec3(0.7,0.1,1.2), col_required);
     return mapBird(p, col_required);
 }
+#endif

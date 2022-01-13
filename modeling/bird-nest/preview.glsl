@@ -14,7 +14,7 @@
 
 // model
 
-#include "sdf_berries.glsl"
+#include "sdf.glsl"
 
 float sdf(vec3 p) {
     const float sc = 1.0;
