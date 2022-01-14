@@ -52,9 +52,54 @@ vec4 mapBaby(vec3 p, bool col_required) {
 }
 
 
+vec4 mapEgg(vec3 p, bool col_required) {
+    vec4 egg = vec4(0, 0, 0, sdEllipsoid(p, vec3(0.7,vec2(0.55)*exp(-0.2*p.x))));
+    if (col_required && abs(egg.w) < 0.2) {
+        egg.xyz = vec3(0.35,0.65,0.7) * smoothstep(0.,1.,1.0-0.1*exp(4.0*SimplexNoise3D(10.0*p)));
+        egg.xyz = mix(egg.xyz, vec3(0.8,0.9,0.95), 0.6*smoothstep(0.,1.,-20.0*egg.w+0.5));
+    }
+    egg.w = abs(egg.w)-0.025;
+    return egg;
+}
+
+vec4 mapEggBrokenBE(vec3 p, bool col_required) {
+    float bound = length(p)-1.0, boundw = 0.3; if (bound > 0.0) return vec4(1,0,0, bound+boundw);
+    vec4 egg = mapEgg(p, col_required);
+    float clip = p.x+0.2*p.z-0.1+0.1*cos(4.0*p.y);
+    if (egg.w < 0.2) clip += 0.2*SimplexNoise3D(6.0*p);
+    egg.w = max(egg.w, clip);
+    return egg;
+}
+vec4 mapEggBrokenLE(vec3 p, bool col_required) {
+    float bound = length(p-vec3(0.3,0,0))-0.7, boundw = 0.3; if (bound > 0.0) return vec4(1,0,0, bound+boundw);
+    vec4 egg = mapEgg(p, col_required);
+    float clip = -p.x+0.2*p.z+0.1+0.1*cos(4.0*p.y);
+    if (egg.w < 0.2) clip += 0.2*SimplexNoise3D(6.0*p);
+    egg.w = max(egg.w, clip);
+    return egg;
+}
+vec4 mapEggBrokenS1(vec3 p, bool col_required) {
+    float bound = length(p-vec3(-0.1,0,-0.2))-0.9, boundw = 0.3; if (bound > 0.0) return vec4(1,0,0, bound+boundw);
+    vec4 egg = mapEgg(p, col_required);
+    float clip = p.z+0.2*p.x+0.1*cos(4.0*p.y+2.0*p.x)+0.1;
+    if (egg.w < 0.2) clip += 0.2*SimplexNoise3D(6.0*p);
+    egg.w = max(egg.w, clip);
+    return egg;
+}
+vec4 mapEggBrokenS2(vec3 p, bool col_required) {
+    float bound = length(p-vec3(0.1,0,-0.2))-0.9, boundw = 0.3; if (bound > 0.0) return vec4(1,0,0, bound+boundw);
+    vec4 egg = mapEgg(p, col_required);
+    float clip = p.z-0.3*p.x+0.05*cos(4.0*p.x-2.0*p.y)+0.2;
+    if (egg.w < 0.2) clip += 0.2*SimplexNoise3D(6.0*p);
+    egg.w = max(egg.w, clip);
+    return egg;
+}
+
+
 #ifndef NO_MAP
 vec4 map(vec3 p, bool col_required) {
     //return mapBabyHead(p, col_required);
-    return mapBaby(p, col_required);
+    //return mapBaby(p, col_required);
+    return mapEggBrokenS2(p, col_required);
 }
 #endif
