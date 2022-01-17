@@ -64,7 +64,7 @@ def get_euler_angles(rotmat, rotation_mode: str):
 
 
 def get_transform_code(obj):
-    """Return the transformation information of an object as code string"""
+    """Print the transformation information of an object as code string"""
 
     # get name
     name = obj.name
@@ -116,6 +116,33 @@ def get_transform_code(obj):
     print(code_full)
 
 
+def get_vertices(obj):
+    """Get the vertices of a mesh"""
+    vertices_raw = obj.data.vertices
+    vertices = np.zeros((len(vertices_raw), 3))
+    for i in range(len(vertices_raw)):
+        v = vertices_raw[i].co
+        vertices[i][0] = v.x
+        vertices[i][1] = v.y
+        vertices[i][2] = v.z
+    return vertices
+
+
+def get_aabb(obj):
+    """Get the axis-aligned bounding box of an object
+       Returns (center, radius, clipping_code) """
+    vertices = get_vertices(obj)
+    pmin = np.amin(vertices, axis=(0))
+    pmax = np.amax(vertices, axis=(0))
+    center = 0.5*(pmin+pmax)
+    radius = 0.5*(pmax-pmin)
+    center_s = string_join_array(center).split(',')
+    radius_s = string_join_array(radius).split(',')
+    elems = [f"abs(p.{'xyz'[i]}-{center_s[i]})-{radius_s[i]}" for i in range(3)]
+    code = f"max(max({elems[0]},{elems[1]}),{elems[2]})".replace('--', '+')
+    return (center, radius, code)
+
+
 if __name__ == "__main__":
 
     print("======== Get Transform ========")
@@ -125,6 +152,7 @@ if __name__ == "__main__":
             continue
         if not obj.visible_get():
             continue
+        #print(obj.name, get_aabb(obj)[-1])
         get_transform_code(obj)
 
     print(end='\n')
