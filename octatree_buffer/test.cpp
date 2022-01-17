@@ -125,7 +125,7 @@ vec4 *FrameBuffer = nullptr;
 #define P0 vec3(-2.5, -2.5, -2.5) /* min coordinates of grid */
 #define P1 vec3(2.5, 2.5, 2.5) /* max coordinates of grid */
 #define GRID_DIF ivec3(1) /* initial grid size, at least one odd component */
-#define PLOT_DEPTH 9 /* depth of the tree */
+#define PLOT_DEPTH 8 /* depth of the tree */
 #define GRID_SIZE (GRID_DIF*(1<<PLOT_DEPTH))
 #define EDGE_ROUNDING 255 /* divide edge into # intervals and round to integer coordinate */
 #define MESH_SIZE (GRID_SIZE*EDGE_ROUNDING)

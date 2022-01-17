@@ -895,6 +895,7 @@ struct mat3 {
 	explicit mat3(float _00, float _10, float _20, float _01, float _11, float _21, float _02, float _12, float _22) {  // ordered column-wise
 		v[0][0] = _00, v[0][1] = _10, v[0][2] = _20, v[1][0] = _01, v[1][1] = _11, v[1][2] = _21, v[2][0] = _02, v[2][1] = _12, v[2][2] = _22;
 	}
+	explicit mat3(mat4 m);
 	//float* operator[](int i) { return (float*)&v[i][0]; }
 	vec3& operator[](int i) { return *(vec3*)&v[i][0]; }
 	mat3 operator-() const { mat3 r; for (int i = 0; i < 9; i++) (&r.v[0][0])[i] = -(&v[0][0])[i]; return r; }
@@ -942,6 +943,13 @@ struct mat4 {
 	explicit mat4(vec4 i, vec4 j, vec4 k, vec4 l) {  // matrix by column vectors
 		*(vec4*)&v[0] = i, *(vec4*)&v[1] = j, *(vec4*)&v[2] = k, *(vec4*)&v[3] = k;
 	}
+	explicit mat4(mat3 m) {
+		for (int i = 0; i < 3; i++) {
+			for (int j = 0; j < 3; j++) v[i][j] = m.v[i][j];
+			v[i][3] = v[3][i] = 0.0f;
+		}
+		v[3][3] = 1.0f;
+	}
 	explicit mat4(
 		float _00, float _10, float _20, float _30,
 		float _01, float _11, float _21, float _31,
@@ -979,7 +987,12 @@ struct mat4 {
 			v[0][3] * a.x + v[1][3] * a.y + v[2][3] * a.z + v[3][3] * a.w);
 	}
 };
+mat4 transpose(const mat4 &m) { mat4 r; for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) r.v[i][j] = m.v[j][i]; return r; }
 mat4 operator*(float k, const mat4 &m) { mat4 r; for (int i = 0; i < 16; i++) (&r.v[0][0])[i] = k * (&m.v[0][0])[i]; return r; }
+
+mat3::mat3(mat4 m) {
+	for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) v[i][j] = m.v[i][j];
+}
 
 #undef max
 #undef min
