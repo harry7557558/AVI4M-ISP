@@ -14,7 +14,7 @@
 
 // model
 
-#include "sdf_coraltrees.glsl"
+#include "sdf_crab.glsl"
 
 float sdf(vec3 p) {
     const float sc = 1.0;
@@ -30,7 +30,7 @@ vec3 sdfGrad(in vec3 p, in float e) {
 
 
 // color surface or not
-#define COLOR 1
+#define COLOR 0
 
 // raymarching parameters
 #define BOX_RADIUS vec3(2.5, 2.5, 2.5)

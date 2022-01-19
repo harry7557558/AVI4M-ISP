@@ -29,6 +29,11 @@ float sdSegment(vec3 p, vec3 a, vec3 b) {
     float h = dot(q,d)/dot(d,d);
     return length(q-d*clamp(h,0.,1.));
 }
+float sdSegmentH(vec3 p, vec3 a, vec3 b, out float h) {
+    vec3 q = p-a, d = b-a;
+    h = clamp(dot(q,d)/dot(d,d), 0., 1.);
+    return length(q-d*h);
+}
 float sdCapsule(vec3 p, float h, float r) {
     p.z = p.z-clamp(p.z, 0.0, h);
     return length(p) - r;
@@ -37,6 +42,17 @@ float sdEllipsoid(vec3 p, vec3 r) {
     float k1 = length(p/r);
     float k2 = length(p/(r*r));
     return k1*(k1-1.0)/k2;
+}
+float sdLnNormEllipsoid(vec3 p, vec3 r, float n) {
+    p = abs(p);
+    float k1 = pow(dot(pow(p/r,vec3(n)),vec3(1)),1.0/n);
+    float k2 = pow(dot(pow(p/(r*r),vec3(n)),vec3(1)),1.0/n);
+    return k1*(k1-1.0)/k2;
+}
+float sdLnNormEllipsoid(vec3 p, vec3 r, vec3 n) {
+    float d = pow(dot(pow(abs(p)/r,n),vec3(1)),1.0/max(max(n.x,n.y),n.z))-1.0;
+    float m = min(min(r.x,r.y),r.z);
+    return d * m;
 }
 float sdTorus(vec3 p, float R, float r) {
     vec2 q = vec2(length(p.xy)-R,p.z);
