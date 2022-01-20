@@ -27,15 +27,16 @@ vec4 mapCrabShell(vec3 p, bool col_required) {
     else if (d1 < 0.0) d = d1, dx = x1-r, dy = h1;
     else if (d0 < d1) d = d0, dx = x0-r, dy = h0;
     else d = d1, dx = x1-r, dy = h1;
-    float texture = 0.001*r*sin(40.*t) + 0.003*r*sin(40.*atan(dy,dx));
+    float texture = 0.001*r*sin(40.*t) + 0.005*r*sin(36.*atan(dy,dx));
     d = abs(d)-0.0*r-0.25 + texture;
     vec4 shell = vec4(0.85,0.8,0.75, d);
     if (col_required) {
         shell.xyz = mix(vec3(0.65,0.55,0.45), vec3(0.9,0.8,0.75), smoothstep(0.,1.,exp(2.0*PI*n+t-PI)));
         shell.xyz *= pow(vec3(0.57,0.35,0.13), vec3(-20.0*texture));
         shell.xyz *= pow(vec3(0.5,0.35,0.22), vec3(-0.1*sin(2.0*atan(dy,dx))));
+        shell.xyz = clamp(pow(shell.xyz*vec3(1.0,0.7,0.5), vec3(0.6)), 0., 1.);
     }
-    vec4 opening = vec4(0.85,0.8,0.75, sdTorus((p-vec3(-1.65,0,-0.91)).xzy*vec3(1,0.96,1), 1.55, 0.04*(0.0*r+8.0)));
+    vec4 opening = vec4(0.85,0.75,0.55, sdTorus((p-vec3(-1.65,0,-0.91)).xzy*vec3(1,0.96,1), 1.55, 0.04*(0.0*r+8.0)));
     shell = smin(shell, opening, 0.1) + vec4(0,0,0,0.16);
     return shell * vec4(1,1,1,sc);
 }
@@ -99,13 +100,17 @@ vec4 mapCrabClaw(vec3 p, vec3 joint1, vec3 joint2, vec3 tip1, vec3 tip2, bool co
 
 
 vec4 mapCrabEye(vec3 p, bool col_required) {
+    float bound = sdSegment(p, vec3(0.0), vec3(1.2,0,0))-0.6, boundw = 0.4;
+    if (bound > 0.0) return vec4(1,0,0, bound+boundw);
     p.z *= 0.9;
-    vec3 q = p-vec3(0,0,0.2*p.x*(1.0-p.x));
-    vec4 rod = vec4(1,0,0, sdSegment(q, vec3(0.), vec3(1.,0.,0.)) - (0.3+0.03*sin(1.5*p.x)+0.05*sin(3.0*p.x)));
-    q = roty(-0.2*PI)*(p-vec3(1.0,0,0.1));
-    vec4 eye = vec4(1,0,0, sdEllipsoid(q, vec3(0.4,0.35,0.45)));
+    p.x -= 0.2*p.z;
+    p.y -= 0.2*tanh(p.y)*sin(6.0*p.z);
+    vec3 q = p-vec3(0,0,0.3*p.x*(1.0-p.x));
+    vec4 rod = vec4(1,0,0, sdSegment(q, vec3(0.), vec3(1.,0.,0.)) - (0.25+0.03*sin(1.5*p.x)+0.05*sin(3.0*p.x))*exp(-0.3*(1.0-p.x)));
+    q = roty(-0.3*PI)*(p-vec3(1.0,0,0.1));
+    vec4 eye = vec4(1,0,0, sdEllipsoid(q, vec3(0.4,0.35,0.45)-0.12));
     vec4 res = smin(rod, eye, 0.2) + vec4(0,0,0,0.1);
-    if (col_required) res.xyz = mix(vec3(0.9,0.75,0.65), vec3(0.1,0.05,0.02), smoothstep(0.,1.,20.0*(p.x-1.0)));
+    if (col_required) res.xyz = mix(vec3(0.9,0.75,0.65), pow(vec3(0.1,0.05,0.02),vec3(0.8)), smoothstep(0.,1.,20.0*(p.x-1.00)));
     return res;
 }
 
@@ -120,15 +125,15 @@ vec4 mapCrabBody(vec3 p, bool col_required) {
     vec4 legs = vec4(1,0,0, 100.);
     float ls = 0.5+0.5*tanh(4.0*p.y);
     q = p; q.y = -length(vec2(q.y,0.05));
-    q = rotx(0.1*PI)*rotz(0.1*PI)*roty((0.1+0.1*ls)*PI)*(q-vec3(-0.15,-0.5,-0.2));
-    legs = cmin(legs, mapCrabLeg(q, vec3(0.8,0,-0.1), vec3(0.7,-0.1,-0.7), vec3(0.3+0.2*ls,-0.2,-1.1-0.1*ls), vec3(-0.3+0.3*ls,-0.3,-1.3-0.3*ls), col_required));
+    q = rotx(0.1*PI)*rotz(0.1*PI)*roty((0.1+0.1*ls)*PI)*(q-vec3(-0.2,-0.5,-0.2));
+    legs = cmin(legs, mapCrabLeg(q, vec3(0.8,0,-0.1), vec3(0.9+0.1*ls,-0.1,-0.7-0.05*ls), vec3(0.8+0.2*ls,-0.2,-1.2-0.3*ls), vec3(0.4+0.3*ls,-0.3,-1.7-0.5*ls), col_required));
     q = p; q.y = -length(vec2(q.y,0.05));
-    q = rotx(0.05*PI)*rotz(0.05*PI)*roty((0.12+0.1*ls)*PI)*(q-vec3(0.05,-0.35,-0.2));
-    legs = cmin(legs, mapCrabLeg(q/0.95, vec3(0.8,0,-0.1), vec3(0.7,-0.1,-0.7), vec3(0.4,-0.2,-1.2), vec3(-0.3,-0.3,-1.4-0.2*ls), col_required)*vec4(1,1,1,0.95));
+    q = rotx(0.05*PI)*rotz(0.05*PI)*roty((0.12+0.1*ls)*PI)*(q-vec3(0.0,-0.35,-0.2));
+    legs = cmin(legs, mapCrabLeg(q/0.95, vec3(0.8,0,-0.1), vec3(0.9,-0.1,-0.7-0.05*ls), vec3(0.8,-0.2,-1.3-0.2*ls), vec3(0.2,-0.3,-1.7-0.4*ls), col_required)*vec4(1,1,1,0.95));
     q = rotz(0.05*PI)*roty(0.0*PI)*(p-vec3(0.15,-0.15,-0.2));
-    legs = cmin(legs, mapCrabClaw(q/1.05, vec3(1.0,0,0), vec3(1.1,0,-0.4), vec3(0.8,-0.1,-1.3), vec3(0.9,-0.05,-1.3), col_required)*vec4(1,1,1,1.05));
+    legs = cmin(legs, mapCrabClaw(q/1.05, vec3(1.0,0,0), vec3(1.3,0,-0.4), vec3(1.1,-0.1,-1.4), vec3(1.2,-0.05,-1.4), col_required)*vec4(1,1,1,1.05));
     q = rotz(0.03*PI)*roty(0.1*PI)*(vec3(1,-1,1)*p-vec3(0.15,-0.2,-0.2));
-    legs = cmin(legs, mapCrabClaw(q/1.05, vec3(1.0,0,0), vec3(1.3,0,0.1), vec3(2.0,-0.1,0.3), vec3(2.05,0.1,0.3), col_required)*vec4(1,1,1,1.05));
+    legs = cmin(legs, mapCrabClaw(q/1.05, vec3(1.0,0,0), vec3(1.4,0.1,0.1), vec3(2.2,0.1,0.3), vec3(2.25,0.3,0.3), col_required)*vec4(1,1,1,1.05));
     body = smin(body, legs, 0.1);
     if (col_required) {
         body.xyz += 0.4*SimplexNoise3D(2.0*p);
@@ -136,16 +141,18 @@ vec4 mapCrabBody(vec3 p, bool col_required) {
         body.xyz = pow(clamp(body.xyz, 0.0, 1.0), vec3(1.0));
     }
     // eyes/tentacles
-    q = roty(0.15*PI)*(p-vec3(0.6,0,0.3)); q.y=0.05*log(2.0*cosh(q.y/0.05));
-    vec4 eyes = mapCrabEye((q-vec3(0,0.15,0))/0.35, col_required)*vec4(1,1,1,0.35);
-    body = smin(body, eyes, 0.03);
-    vec4 tentacles = vec4(0.9,0.3,0.05, sdSegment(q, vec3(0,0.05,0.1), vec3(0.2,0.12,-0.3))-0.03);
+    q = roty(0.2*PI)*(p-vec3(0.6,0,0.3)); q.y=length(vec2(q.y,0.01));
+    vec4 eyes = mapCrabEye(rotz(-0.05*PI)*(q-vec3(0,0.1,-0.05))/0.38, col_required)*vec4(1,1,1,0.38);
+    body = smin(body, eyes, 0.02);
+    vec4 tentacles = vec4(0.9,0.3,0.05, sdSegment(q, vec3(0,0.02,0.1), vec3(0.2,0.08,-0.3))-0.03);
     body = smin(body, tentacles, 0.04);
     return body;
 }
 
 vec4 mapCrab(vec3 p, bool col_required) {
-    vec3 q = rotx(0.5*PI)*rotz(PI)*roty(-0.05*PI)*rotx(0.08*PI)*(p-vec3(-0.2,0,-0.2));
+    float bound = max(max(abs(p.x-0.12)-1.96,abs(p.y-0.07)-1.38),abs(p.z+0.32)-1.25), boundw = 0.3;
+    if (bound-boundw > 0.0) return vec4(1,0,0, bound);
+    vec3 q = rotx(0.5*PI)*rotz(PI)*roty(-0.05*PI)*rotx(0.08*PI)*(p-vec3(-0.1,0,-0.17));
     vec4 shell = mapCrabShell(q, col_required);
     q = p;
     vec4 body = mapCrabBody(q/0.9, col_required)*vec4(1,1,1,0.9);
