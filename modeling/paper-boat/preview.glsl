@@ -30,7 +30,7 @@ vec3 sdfGrad(in vec3 p, in float e) {
 
 
 // color surface or not
-#define COLOR 0
+#define COLOR 1
 
 // raymarching parameters
 #define BOX_RADIUS vec3(2.5, 2.5, 2.5)

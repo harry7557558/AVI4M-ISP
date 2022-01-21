@@ -58,6 +58,10 @@ float sdTorus(vec3 p, float R, float r) {
     vec2 q = vec2(length(p.xy)-R,p.z);
     return length(q)-r;
 }
+float sdBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q,vec3(0))) + min(max(q.x,max(q.y,q.z)),0.0);
+}
 float sdTriangle(vec3 p, vec3 a, vec3 b, vec3 c) {
     // https://www.iquilezles.org/www/articles/distfunctions/distfunctions.htm
     vec3 ba = b - a; vec3 pa = p - a;

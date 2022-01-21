@@ -1175,5 +1175,51 @@ vec refract(vec I, vec N, float eta) {
 		return eta * I - (eta * dot(N, I) + sqrt(k)) * N;
 }
 
-// hacking
-#define texelFetch(sampler, pos, plane) vec4(0)
+
+// texture
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <libraries/stb_image.h>
+
+class sampler2D {
+	int w, h;
+	vec4 *data;
+public:
+	sampler2D(const char filename[]) {
+		uint8_t *pixels = stbi_load(filename, &w, &h, nullptr, 4);
+		if (pixels == nullptr) {
+			w = h = 0, data = nullptr;
+			return;
+		}
+		data = new vec4[w*h];
+		for (int j = 0; j < h; j++) {
+			for (int i = 0; i < w; i++) {
+				uint8_t *pixel = &pixels[4 * ((h - 1 - j)*w + i)];
+				data[j*w + i] = vec4(pixel[0], pixel[1], pixel[2], pixel[3]) / 255.0f;
+			}
+		}
+		delete pixels;
+	}
+	~sampler2D() {
+		delete data; data = nullptr;
+		w = h = 0;
+	}
+	friend vec4 texelFetch(const sampler2D &sampler, ivec2 pos, int plane);
+	friend vec4 texture(const sampler2D &sampler, vec2 uv);
+};
+vec4 texelFetch(const sampler2D &sampler, ivec2 pos, int plane) {
+	ivec2 res = ivec2(sampler.w, sampler.h);
+	pos = (pos % res + res) % res;
+	return sampler.data[pos.y*sampler.w + pos.x];
+}
+vec4 texture(const sampler2D &sampler, vec2 uv) {
+	uv = uv * vec2(sampler.w, sampler.h) - 0.5;
+	vec2 p0 = floor(uv), pf = uv - p0;
+	vec2 p1 = p0 + 1.0;
+	return mix(  // bilinear interpolation
+		mix(texelFetch(sampler, ivec2(p0) + ivec2(0, 0), 0),
+			texelFetch(sampler, ivec2(p0) + ivec2(0, 1), 0), pf.x),
+		mix(texelFetch(sampler, ivec2(p0) + ivec2(1, 0), 0),
+			texelFetch(sampler, ivec2(p0) + ivec2(1, 1), 0), pf.x),
+		pf.y);
+}

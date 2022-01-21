@@ -3,6 +3,7 @@
 
 import sys
 import re
+import os
 
 
 def convert_swizzling(glsl_source: str) -> str:
@@ -61,6 +62,7 @@ def convert_float(glsl_source: str) -> str:
 
 
 def glsl2cpp(filepath: str) -> str:
+    directory = filepath[:filepath.rfind('/')+1]
     print("Open GLSL source:", filepath)
     glsl_source = open(filepath, "r").read()
     glsl_source = glsl_source.replace('\t', ' '*4)
@@ -73,11 +75,16 @@ def glsl2cpp(filepath: str) -> str:
     for line in glsl_source:
         if line.startswith('#include'):
             # assume relative path
-            regex = r"#include [\<\"\']([A-Za-z0-9\-_\.]+)[\>\"\']"
-            sourcepath = re.match(regex, line).group(1)
-            directory = filepath[:filepath.rfind('/')+1]
-            glsl_source_1.append(glsl2cpp(directory+sourcepath))
-        elif not line.startswith('#iChannel'):
+            regex = r"#include [\<\"\']([A-Za-z0-9\-_\.\/\\]+)[\>\"\']"
+            sourcepath = directory + re.match(regex, line).group(1)
+            glsl_source_1.append(glsl2cpp(sourcepath))
+        elif line.startswith('#iChannel'):
+            regex = r"#(iChannel\d) [\<\"\']([A-Za-z0-9\-_\.\/\\]+)[\>\"\']"
+            match = re.match(regex, line)
+            sampler = match.group(1)
+            sourcepath = os.path.abspath(directory + match.group(2)).replace('\\', '/')
+            glsl_source_1.append(f"const sampler2D {sampler}(\"{sourcepath}\");")
+        else:
             glsl_source_1.append(line)
     glsl_source = '\n'.join(glsl_source_1)
 
