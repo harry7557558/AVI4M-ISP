@@ -198,8 +198,23 @@ vec4 mapCoralTree04(vec3 p, bool col_required) {
 }
 
 
+vec4 mapRock(vec3 p, bool col_required) {
+    float d = sdEllipsoid(p, vec3(0.8,0.6,0.3));
+    if (abs(d)>0.5) return vec4(1,0,0,d);
+    float dcol = 0.0;
+    for (float k=0.0; k<4.0; k+=1.0) {
+        float noise = SimplexNoise3D(1.0*exp2(k)*p);
+        d += 0.5*exp2(-k)*noise;
+        dcol += 1.0*pow(1.0,-k)*noise;
+    }
+    vec3 col = mix(vec3(0.4,0.4,0.3), vec3(0.4,0.35,0.15), smoothstep(0.,1.,0.5+dcol));
+    return vec4(pow(col,vec3(0.7)), d*0.7);
+}
+
+
 #ifndef NO_MAP
 vec4 map(vec3 p, bool col_required) {
+    //return mapRock(p, col_required);
     return mapCoralTree01(p, col_required);
 }
 #endif

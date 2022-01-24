@@ -2,8 +2,9 @@
 
 
 vec4 mapFish(vec3 p, bool col_required) {
+    const float sc = 0.7; p /= sc;
     float bound = sdEllipsoid(p-vec3(-0.3,0,0),vec3(2.0,0.8,1.2)), boundw = 0.3;
-    if (bound > 0.0) return vec4(1,0,0, bound+boundw);
+    if (bound > 0.0) return vec4(1,0,0, (bound+boundw)*sc);
     float rad = 1.0+0.2*exp(-sqr(1.0*(p.x-0.8)))*(p.z+0.5)-0.05*exp(-sqr(1.0*(p.x+0.6)))-0.2*exp(-sqr(3.0*(p.x-1.3)));
     float lateral_line = p.z-0.15*sin(2.0*p.x)-0.15;
     float lateral_line_d = exp(-sqr(40.0*lateral_line))*exp(-sqr(1.5*(p.x+0.5)));
@@ -21,7 +22,7 @@ vec4 mapFish(vec3 p, bool col_required) {
     body = smin(body, gill, 0.05);
     q = rotz(0.1*PI)*(vec3(p.x,abs(p.y),p.z)-vec3(0.9,0.13,0.1));
     vec4 eyes = vec4(1,0,0, length(q)-0.13);
-    if (col_required) eyes.xyz = mix(vec3(0.1,0.05,0.1), vec3(0.55,0.3,0.45), clamp(40.0*(length(q.xz)-0.05)+0.5,0.,1.));
+    if (col_required) eyes.xyz = mix(vec3(0.1,0.05,0.1), vec3(0.55,0.3,0.45), 0.4+0.6*clamp(40.0*(length(q.xz)-0.05)+0.5,0.,1.));
     body = smin(body, eyes, 0.02);
     q = roty(0.05*PI)*(p-vec3(-0.2,0,0.4)); q.z += 0.3*q.x*q.x*q.x;
     float spines = exp(sin(80.0*atan(p.z+0.5,p.x-1.0)));
@@ -52,7 +53,8 @@ vec4 mapFish(vec3 p, bool col_required) {
     vec4 fin_pectoral = vec4(1,0,0, sdEllipsoid(q, vec3(0.25,0.05,max(0.1-0.2*q.x,0.01)))-0.003*spines);
     if (col_required) fin_pectoral.xyz = pow(vec3(0.95,0.75,0.1),vec3(1.0+0.2*spines));
     body = smin(body, fin_pectoral, 0.05);
-    return body;
+    if (col_required) body.xyz = pow(body.xyz, vec3(0.9));
+    return body * vec4(1,1,1, sc);
 }
 
 
