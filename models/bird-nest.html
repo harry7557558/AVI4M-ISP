@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <!-- https://github.com/RisoriTofa/Insert-3D-Objects-in-a-webpage-using-HTML-and-CSS-only -->
+
+    <meta charset="utf-8">
+    <title>Please Keep Off the Grass</title>
+
+    <!-- https://modelviewer.dev/docs/index.html -->
+    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+    <script nomodule src="https://unpkg.com/@google/model-viewer/dist/model-viewer-legacy.js"></script>
+
+    <style>
+        model-viewer {
+            position: fixed;
+            left: 0px;
+            top: 0px;
+            display: block;
+            margin: 0px;
+            padding: 0px;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <model-viewer src="bird-nest.glb" auto-rotate camera-controls ar exposure="0.45"
+        ios-src="bird-nest.glb"></model-viewer>
+</body>
+
+</html>
